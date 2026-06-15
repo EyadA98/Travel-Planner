@@ -64,6 +64,18 @@
   .seg-draw{animation:drawIn .7s ease both}
   #scrollbar{position:fixed;top:0;left:0;height:3px;z-index:60;width:0;background:linear-gradient(90deg,#bba4e4,#8a64c8,#f3b98e)}
   @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+  @media (max-width:639px){
+    .p-6{padding:1.05rem!important}
+    .p-5{padding:0.9rem!important}
+    .px-5{padding-left:0.9rem!important;padding-right:0.9rem!important}
+    .pb-5{padding-bottom:0.9rem!important}
+    .gap-6{gap:1rem!important}
+    .gap-4{gap:0.75rem!important}
+    .space-y-6>:not([hidden])~:not([hidden]){margin-top:1.05rem!important}
+    .text-5xl{font-size:2.05rem!important;line-height:1.12!important}
+    .text-4xl{font-size:1.7rem!important;line-height:1.15!important}
+    main{padding-top:0.75rem!important}
+  }
 </style>
 </head>
 <body>
@@ -214,11 +226,11 @@ function SectionTitle({step,kicker,title,children}){ const {dark}=useContext(The
       <h2 className={`font-display text-2xl sm:text-3xl mt-0.5 ${dark?'text-lavender-50':'text-lavender-950'}`}>{title}</h2></div>
     </div>{children}
   </div>); }
-function Mini({label,value}){ const {dark}=useContext(Theme); return (<div className={`rounded-xl px-3 py-2.5 ${dark?'bg-white/5 border border-white/10':'bg-white border border-lavender-200'}`}><div className={`text-[10px] uppercase tracking-wide font-semibold ${dark?'text-lavender-300/70':'text-lavender-700'}`}>{label}</div><div className="font-display text-xl iridescent-text mt-0.5">{value}</div></div>); }
+function Mini({label,value}){ const {dark}=useContext(Theme); return (<div className={`rounded-xl px-3 py-2.5 ${dark?'bg-white/5 border border-white/10':'bg-white border border-lavender-200'}`}><div className={`text-[10px] uppercase tracking-wide font-semibold ${dark?'text-lavender-300/70':'text-lavender-700'}`}>{label}</div><div className="font-display text-lg sm:text-xl iridescent-text mt-0.5 leading-tight break-words">{value}</div></div>); }
 function TotalBar({label,value}){ return (<div className="flex items-center justify-between mt-5 pt-4 border-t border-lavender-400/20"><span className="text-sm font-semibold text-lavender-200/90">{label}</span><span className="font-display text-xl iridescent-text">{value}</span></div>); }
 function KPI({label,value,icon}){ const {dark}=useContext(Theme); return (
   <Card className="p-4 slide-up lift"><div className="flex items-center gap-2 text-[11px] uppercase tracking-wide font-semibold text-lavender-300/70">{icon&&<span className="text-sm">{icon}</span>}{label}</div>
-  <div className={`mt-1 font-display text-2xl ${dark?'text-lavender-50':'text-lavender-950'}`}>{value}</div></Card>); }
+  <div className={`mt-1 font-display text-xl sm:text-2xl leading-tight break-words ${dark?'text-lavender-50':'text-lavender-950'}`}>{value}</div></Card>); }
 
 function LogoMark({size=34}){ return (
   <svg width={size} height={size} viewBox="0 0 100 100">
@@ -232,7 +244,7 @@ function LogoMark({size=34}){ return (
   </svg>); }
 function Logo({size=34,logo}){ if(logo) return <img src={logo} alt="logo" style={{maxHeight:size+8,maxWidth:180}} className="object-contain"/>;
   return (<div className="flex items-center gap-2.5"><LogoMark size={size}/>
-    <div className="leading-none"><div className="font-display text-lg tracking-wide iridescent-text">Travel Planner</div>
+    <div className="leading-none hidden min-[380px]:block"><div className="font-display text-lg tracking-wide iridescent-text">Travel Planner</div>
     <div className="text-[9px] tracking-[0.3em] text-lavender-300/70 font-semibold mt-0.5">JOURNEY OS</div></div></div>); }
 
 /* ============================ ATTACHMENTS ============================ */
