@@ -12,6 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = { darkMode:'class', theme:{ extend:{
@@ -840,8 +841,64 @@ function TripsView({trips,onNew,onEdit,onAction}){ const {dark}=useContext(Theme
   </div>); }
 function trip_dates(t){ if(!t.departDate&&!t.returnDate)return 'Dates not set'; return `${prettyDate(t.departDate)} – ${prettyDate(t.returnDate)}`; }
 
+/* ============================ CLOUD SYNC (Supabase) ============================ */
+function useCloud(trips,setTrips){
+  const [cfg,setCfg]=usePersist('tp_sb',{url:'',key:''});
+  const [session,setSession]=useState(null);
+  const [status,setStatus]=useState('');
+  const sb=useRef(null); const synced=useRef({}); const tref=useRef(trips); tref.current=trips;
+  useEffect(()=>{ if(cfg.url&&cfg.key&&window.supabase){ try{ sb.current=window.supabase.createClient(cfg.url,cfg.key);
+    sb.current.auth.getSession().then(({data})=>setSession((data&&data.session)||null));
+    const {data:sub}=sb.current.auth.onAuthStateChange((_e,s)=>setSession(s));
+    return ()=>{ try{ sub.subscription.unsubscribe(); }catch(e){} };
+  }catch(e){ setStatus('Invalid Supabase config'); } } else { sb.current=null; setSession(null); } },[cfg.url,cfg.key]);
+  const upsert=async(t)=>{ if(!sb.current||!session)return; const uid=session.user.id; const {error}=await sb.current.from('trips').upsert({id:t.id,user_id:uid,data:t,updated_at:new Date(t.updatedAt||Date.now()).toISOString()}); if(!error) synced.current[t.id]=t.updatedAt||Date.now(); return error; };
+  const del=async(id)=>{ if(!sb.current||!session)return; await sb.current.from('trips').delete().eq('id',id); delete synced.current[id]; };
+  useEffect(()=>{ if(!sb.current||!session)return; let cancel=false; (async()=>{ setStatus('Syncing…'); try{
+    const {data:rows,error}=await sb.current.from('trips').select('id,data,updated_at'); if(error)throw error; if(cancel)return;
+    const remote={}; (rows||[]).forEach(r=>remote[r.id]=r); const local=tref.current; const updates={}; const toPush=[];
+    Object.keys(remote).forEach(id=>{ const r=remote[id]; const l=local[id]; const ru=new Date(r.updated_at).getTime(); if(!l||(l.updatedAt||0)<ru){ updates[id]=r.data; } synced.current[id]=ru; });
+    Object.values(local).forEach(l=>{ const r=remote[l.id]; const ru=r?new Date(r.updated_at).getTime():0; if(!r||(l.updatedAt||0)>ru){ toPush.push(l); } });
+    if(Object.keys(updates).length) setTrips(ts=>({...ts,...updates}));
+    for(const t of toPush){ await upsert(t); }
+    if(!cancel){ setStatus('Synced ✓'); setTimeout(()=>setStatus(s=>s==='Synced ✓'?'':s),1800); }
+  }catch(e){ if(!cancel) setStatus('Sync error: '+(e.message||e)); } })(); return ()=>{cancel=true;}; },[session]);
+  useEffect(()=>{ if(!sb.current||!session)return; const h=setTimeout(async()=>{ try{ const local=tref.current;
+    for(const id in local){ if(synced.current[id]!==(local[id].updatedAt||0)){ await upsert(local[id]); } }
+    for(const id in synced.current){ if(!local[id]){ await del(id); } }
+  }catch(e){} },1200); return ()=>clearTimeout(h); },[JSON.stringify(trips),session]);
+  const signUp=async(email,pw)=>{ if(!sb.current)return; setStatus('Creating account…'); const {error}=await sb.current.auth.signUp({email,password:pw}); setStatus(error?('Error: '+error.message):'Account created. If email confirmation is on, confirm then sign in.'); };
+  const signIn=async(email,pw)=>{ if(!sb.current)return; setStatus('Signing in…'); const {error}=await sb.current.auth.signInWithPassword({email,password:pw}); setStatus(error?('Error: '+error.message):''); };
+  const signOut=async()=>{ if(!sb.current)return; await sb.current.auth.signOut(); synced.current={}; setStatus(''); };
+  return {cfg,setCfg,session,status,ready:!!sb.current,signUp,signIn,signOut};
+}
+function CloudCard({cloud}){ const {dark}=useContext(Theme); const {cfg,setCfg,session,status,ready,signIn,signUp,signOut}=cloud;
+  const [url,setUrl]=useState(cfg.url||''); const [key,setKey]=useState(cfg.key||''); const [email,setEmail]=useState(''); const [pw,setPw]=useState('');
+  const SQL="create table if not exists trips (\n  id text primary key,\n  user_id uuid not null default auth.uid() references auth.users on delete cascade,\n  data jsonb not null,\n  updated_at timestamptz not null default now()\n);\nalter table trips enable row level security;\ncreate policy \"own trips\" on trips for all\n  using (auth.uid() = user_id) with check (auth.uid() = user_id);";
+  return (<Card className="p-6">
+    <div className="font-display text-lg text-lavender-100 mb-1">☁️ Cloud sync</div>
+    <p className="text-[11px] text-lavender-300/60 mb-3">Sync trips across devices via your Supabase project. Receipt images stay on each device for now.</p>
+    {!ready? (<div className="space-y-3">
+      <Field label="Supabase Project URL"><Input value={url} placeholder="https://xxxx.supabase.co" onChange={e=>setUrl(e.target.value)}/></Field>
+      <Field label="Anon public key"><Input value={key} placeholder="eyJhbGci..." onChange={e=>setKey(e.target.value)}/></Field>
+      <Btn onClick={()=>setCfg({url:url.trim(),key:key.trim()})}>Connect project</Btn>
+      <details className="text-[11px] text-lavender-300/70"><summary className="cursor-pointer hover:text-lavender-100">One-time database setup (run once in Supabase → SQL editor)</summary><pre className="mt-2 p-2.5 rounded-lg bg-black/30 overflow-auto text-[10px] leading-relaxed whitespace-pre-wrap text-lavender-100">{SQL}</pre><div className="mt-1">In Supabase → Authentication → Providers, keep Email on. To sign in instantly, you can turn off "Confirm email".</div></details>
+    </div>) : !session? (<div className="space-y-3">
+      <div className="text-[11px] text-teal2-400">Project connected.</div>
+      <Field label="Email"><Input type="email" value={email} onChange={e=>setEmail(e.target.value)}/></Field>
+      <Field label="Password"><Input type="password" value={pw} onChange={e=>setPw(e.target.value)}/></Field>
+      <div className="flex gap-2"><Btn onClick={()=>signIn(email,pw)}>Sign in</Btn><Btn variant="soft" onClick={()=>signUp(email,pw)}>Create account</Btn></div>
+      {status&&<div className="text-[11px] text-peach-300">{status}</div>}
+      <button onClick={()=>setCfg({url:'',key:''})} className="text-[11px] text-lavender-300/60 hover:text-lavender-100">Disconnect project</button>
+    </div>) : (<div className="space-y-2">
+      <div className="text-sm text-lavender-100">Signed in as <span className="font-semibold">{session.user.email}</span></div>
+      <div className="text-xs text-teal2-400">{status||'✓ Trips sync automatically across your devices.'}</div>
+      <div className="flex gap-2"><Btn variant="ghost" onClick={signOut}>Sign out</Btn><button onClick={()=>setCfg({url:'',key:''})} className="text-[11px] text-lavender-300/60 hover:text-lavender-100 self-center">Disconnect</button></div>
+    </div>)}
+  </Card>); }
+
 /* ============================ SETTINGS ============================ */
-function SettingsView({dark,setDark,logo,setLogo,onResetAll}){
+function SettingsView({dark,setDark,logo,setLogo,onResetAll,cloud}){
   const fileRef=useRef();
   const onLogo=(f)=>{ if(!f)return; const r=new FileReader(); r.onload=()=>setLogo(r.result); r.readAsDataURL(f); };
   return (<div className="space-y-4 max-w-2xl">
@@ -850,6 +907,7 @@ function SettingsView({dark,setDark,logo,setLogo,onResetAll}){
       <div className="flex items-center justify-between"><span className="text-sm text-lavender-200/90">Theme</span>
         <button onClick={()=>setDark(!dark)} className={`rounded-xl px-4 py-2 text-sm ${dark?'bg-white/5 border border-white/10':'bg-white border border-lavender-200'}`}>{dark?'☀️ Switch to light':'🌙 Switch to dark'}</button></div>
     </Card>
+    {cloud&&<CloudCard cloud={cloud}/>}
     <Card className="p-6"><div className="font-display text-lg text-lavender-100 mb-3">Brand logo</div>
       <div className="flex items-center gap-4"><div className="w-28 h-16 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">{logo? <img src={logo} className="max-h-12 max-w-24 object-contain"/> : <LogoMark size={34}/>}</div>
         <div className="flex gap-2"><Btn variant="soft" onClick={()=>fileRef.current.click()}>Upload logo</Btn>{logo&&<Btn variant="ghost" onClick={()=>setLogo(null)}>Use default</Btn>}</div>
@@ -874,6 +932,7 @@ function App(){
   const [view,setView]=usePersist('tp_view','trips');
   const [toast,setToast]=useState(null);
   const prevCur=useRef(null);
+  const cloud=useCloud(trips,setTrips);
 
   useEffect(()=>{ document.documentElement.classList.toggle('dark',dark); },[dark]);
   useEffect(()=>{ const s=document.getElementById('splash'); if(s){ setTimeout(()=>s.classList.add('hide'),650); setTimeout(()=>s.remove(),1400);} },[]);
@@ -918,6 +977,7 @@ function App(){
             <nav className="hidden md:flex items-center gap-1">{TOPNAV.map(t=><button key={t.id} onClick={()=>setView(t.id)} className={`px-3.5 py-2 rounded-xl text-sm font-semibold transition ${view===t.id?'iridescent text-indigo2-950 shadow-glow':(dark?'text-lavender-200 hover:bg-white/5':'text-lavender-700 hover:bg-lavender-100')}`}>{t.label}</button>)}</nav>
             <div className="flex items-center gap-2">
               {currentTrip&&<select value={cur} onChange={e=>changeCurrency(e.target.value)} className={`rounded-xl px-2 py-2 text-sm font-medium ${dark?'bg-white/5 border border-white/10 text-lavender-100':'bg-white border border-lavender-200 text-lavender-900'}`}>{Object.entries(CURRENCIES).map(([k,v])=><option key={k} value={k}>{v.flag} {k}</option>)}</select>}
+              {cloud.cfg.url&&<button onClick={()=>setView('settings')} title={cloud.session?('Cloud synced · '+cloud.session.user.email):'Cloud: tap to sign in'} className={`rounded-xl w-10 h-10 flex items-center justify-center ${dark?'bg-white/5 border':'bg-white border'} ${cloud.session?'border-teal2-500/70':'border-white/10'}`}>☁️</button>}
               <button onClick={()=>setDark(!dark)} className={`rounded-xl w-10 h-10 flex items-center justify-center ${dark?'bg-white/5 border border-white/10':'bg-white border border-lavender-200'}`}>{dark?'☀️':'🌙'}</button>
             </div>
           </div>
@@ -935,7 +995,7 @@ function App(){
             view==='map'&&currentTrip? <MapView trip={currentTrip} cur={cur}/> :
             view==='budget'&&currentTrip? <BudgetView trip={currentTrip} cur={cur}/> :
             view==='timeline'&&currentTrip? <TimelineView trip={currentTrip} cur={cur}/> :
-            view==='settings'? <SettingsView dark={dark} setDark={setDark} logo={logo} setLogo={setLogo} onResetAll={()=>{ if(confirm('Delete ALL trips and data?')){ setTrips({}); setCurrentId(null); showToast('All data cleared'); } }}/> : null}
+            view==='settings'? <SettingsView dark={dark} setDark={setDark} logo={logo} setLogo={setLogo} cloud={cloud} onResetAll={()=>{ if(confirm('Delete ALL trips and data?')){ setTrips({}); setCurrentId(null); showToast('All data cleared'); } }}/> : null}
         </div></main>
 
         {showBottomNav&&<nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 glass-dark border-t border-white/10" style={{paddingBottom:'env(safe-area-inset-bottom)'}}>
