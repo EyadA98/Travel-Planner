@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Travel Planner</title>
-<link id="favicon" rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='352 148 248 248'%3E%3Crect x='352' y='148' width='248' height='248' rx='44' fill='%2315103a'/%3E%3Cpath fill='%23ffffff' d='m381.6378 217.79134l10.228363 -40.913376l171.15747 0l-10.2283325 40.913376z'/%3E%3Cpath fill='%23ffffff' d='m381.6378 322.20865l10.228363 40.91339l171.15747 0l-10.2283325 -40.91339z'/%3E%3Cpath fill='%23ffffff' d='m381.6378 290.4567l10.228363 -40.91339l186.49603 0l-10.2283325 40.91339z'/%3E%3C/svg%3E" />
+<link id="favicon" rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%27352%20148%20248%20248%27%3E%3Crect%20x%3D%27352%27%20y%3D%27148%27%20width%3D%27248%27%20height%3D%27248%27%20rx%3D%2744%27%20fill%3D%27%2315103a%27%2F%3E%3Cpath%20fill%3D%27%23ffffff%27%20d%3D%27m381.6378%20217.79134l10.228363%20-40.913376l171.15747%200l-10.2283325%2040.913376z%27%2F%3E%3Cpath%20fill%3D%27%23ffffff%27%20d%3D%27m381.6378%20322.20865l10.228363%2040.91339l171.15747%200l-10.2283325%20-40.91339z%27%2F%3E%3Cpath%20fill%3D%27%23ffffff%27%20d%3D%27m381.6378%20290.4567l10.228363%20-40.91339l186.49603%200l-10.2283325%2040.91339z%27%2F%3E%3C%2Fsvg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -80,15 +80,12 @@
 </style>
 </head>
 <body>
-<div id="splash"><div id="splash-logo"></div><div class="splash-bar"></div></div>
+<div id="splash"><div id="splash-logo" style="display:flex;flex-direction:column;align-items:center;gap:10px"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%27352%20148%20248%20248%27%3E%3Crect%20x%3D%27352%27%20y%3D%27148%27%20width%3D%27248%27%20height%3D%27248%27%20rx%3D%2744%27%20fill%3D%27%2315103a%27%2F%3E%3Cpath%20fill%3D%27%23ffffff%27%20d%3D%27m381.6378%20217.79134l10.228363%20-40.913376l171.15747%200l-10.2283325%2040.913376z%27%2F%3E%3Cpath%20fill%3D%27%23ffffff%27%20d%3D%27m381.6378%20322.20865l10.228363%2040.91339l171.15747%200l-10.2283325%20-40.91339z%27%2F%3E%3Cpath%20fill%3D%27%23ffffff%27%20d%3D%27m381.6378%20290.4567l10.228363%20-40.91339l186.49603%200l-10.2283325%2040.91339z%27%2F%3E%3C%2Fsvg%3E" width="112" height="112" alt="Travel Planner" style="display:block"/><div style="font-family:Marcellus,serif;font-size:26px;letter-spacing:1px;background:linear-gradient(110deg,#c6b3ef,#f3b98e);-webkit-background-clip:text;background-clip:text;color:transparent">Travel Planner</div></div><div class="splash-bar"></div></div>
 <div id="scrollbar"></div>
 <div id="root"></div>
 <script>addEventListener("scroll",function(){var h=document.documentElement,sc=h.scrollTop||document.body.scrollTop,mx=(h.scrollHeight-h.clientHeight)||1,el=document.getElementById("scrollbar");if(el)el.style.width=Math.min(100,sc/mx*100)+"%";},{passive:true});</script>
 <script>
-  (function(){ try{ var saved=localStorage.getItem('tp_logo'); var el=document.getElementById('splash-logo');
-    if(saved){ el.innerHTML='<img src="'+saved+'" style="max-height:80px;max-width:240px"/>'; var f=document.getElementById('favicon'); if(f) f.href=saved; }
-    else { el.innerHTML="<svg width='96' height='96' viewBox='352 150 248 240' xmlns='http://www.w3.org/2000/svg'><path fill='#ffffff' d='m381.6378 217.79134l10.228363 -40.913376l171.15747 0l-10.2283325 40.913376z'/><path fill='#ffffff' d='m381.6378 322.20865l10.228363 40.91339l171.15747 0l-10.2283325 -40.91339z'/><path fill='#ffffff' d='m381.6378 290.4567l10.228363 -40.91339l186.49603 0l-10.2283325 40.91339z'/></svg><div style=\"font-family:Marcellus,serif;font-size:26px;letter-spacing:1px;background:linear-gradient(110deg,#c6b3ef,#f3b98e);-webkit-background-clip:text;background-clip:text;color:transparent\">Travel Planner</div>"; }
-  }catch(e){} })();
+  (function(){ try{ var saved=localStorage.getItem('tp_logo'); if(saved&&/^(data:image|https?:)/.test(saved)){ var el=document.getElementById('splash-logo'); if(el) el.innerHTML='<img src="'+saved+'" style="max-height:100px;max-width:240px" onerror="this.remove()"/>'; var f=document.getElementById('favicon'); if(f) f.href=saved; } else if(saved){ try{localStorage.removeItem('tp_logo');}catch(e){} } }catch(e){} })();
 </script>
 <script type="text/babel" data-presets="env,react">
 const { useState, useEffect, useMemo, useRef, createContext, useContext, useCallback } = React;
