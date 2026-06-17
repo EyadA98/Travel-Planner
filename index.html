@@ -195,7 +195,7 @@ function migrateTrip(t){ if(t.__v5) return t; let nt={...t};
 const SPEND_CATS=['Theme park','Museum','Restaurant','Tour','Activity','Shopping','Event','Park','Tickets','Local transport','Hotel extra','Other'];
 function itemCur(it,trip){ return (it&&it.currency)||trip.baseCurrency||'SAR'; }
 function usageDays(t){ if(t&&t.startDate&&t.endDate){ const d=daysBetween(t.startDate,t.endDate); return d>0?d:1; } return 1; }
-function transportNative(t){ if(t&&(t.type==='car'||t.type==='driver')&&num(t.perDay)>0) return num(t.perDay)*usageDays(t); return num(t.cost); }
+function transportNative(t){ if(!t) return 0; const pm=t.priceMode||((t.type==='car'||t.type==='driver')?'perDay':'total'); if(pm==='perDay'){ if(num(t.cost)>0) return num(t.cost); return num(t.perDay)*usageDays(t); } return num(t.cost); }
 function transportBase(t,trip){ return convertAmount(transportNative(t),itemCur(t,trip),trip.baseCurrency||'SAR'); }
 function spendNative(s){ return num(s.perPerson)*Math.max(1,Math.round(num(s.persons))||1); }
 function spendBase(s,trip){ return convertAmount(spendNative(s),itemCur(s,trip),trip.baseCurrency||'SAR'); }
@@ -515,23 +515,27 @@ function Calendar({selected,rangeStart,rangeEnd,onPick,min,max}){
       return <button key={i} type="button" disabled={disabled} onClick={()=>onPick(iso)} className={`h-8 rounded-lg text-xs transition ${disabled?'opacity-25 cursor-not-allowed':''} ${(sel||isS||isE)?'iridescent text-indigo2-950 font-bold':inR?'bg-lavender-500/25 text-lavender-50':'text-lavender-100 hover:bg-white/10'} ${(iso===today&&!sel&&!isS&&!isE)?'ring-1 ring-lavender-400/60':''}`}>{d}</button>; })}</div>
   </div>); }
 function DateField({value,onChange,min,max,placeholder}){
-  const {dark}=useContext(Theme); const [open,setOpen]=useState(false); const ref=useRef();
-  useEffect(()=>{ const h=e=>{ if(ref.current&&!ref.current.contains(e.target)) setOpen(false); }; document.addEventListener('mousedown',h); return ()=>document.removeEventListener('mousedown',h); },[]);
-  return (<div className="relative" ref={ref}>
-    <button type="button" onClick={()=>setOpen(o=>!o)} className={`w-full rounded-xl px-3.5 py-2.5 text-sm text-left flex items-center justify-between gap-2 ${dark?'bg-white/5 border border-white/10 text-lavender-50':'bg-white border border-lavender-200 text-lavender-950'}`}><span className={value?'':'opacity-40'}>{value?prettyDate(value):(placeholder||'Select date')}</span><span className="opacity-50">📅</span></button>
-    {open&&<div className="absolute z-[55] mt-1"><Calendar selected={value} min={min} max={max} onPick={d=>{onChange(d);setOpen(false);}}/>{value&&<div className="text-center mt-1"><button type="button" onClick={()=>{onChange('');setOpen(false);}} className="text-[11px] text-lavender-300/60 hover:text-peach-400">Clear</button></div>}</div>}
-  </div>); }
+  const {dark}=useContext(Theme); const [open,setOpen]=useState(false); const [pos,setPos]=useState(null); const btn=useRef(); const pop=useRef();
+  const place=()=>{ if(!btn.current)return; const r=btn.current.getBoundingClientRect(); const W=264,Hc=346; const left=Math.max(8,Math.min(r.left,window.innerWidth-W-8)); const fits=window.innerHeight-r.bottom>Hc+10; const top=fits?r.bottom+6:Math.max(8,r.top-Hc-2); setPos({left,top}); };
+  useEffect(()=>{ if(!open)return; place(); const f=()=>place(); window.addEventListener('scroll',f,true); window.addEventListener('resize',f); const h=e=>{ if((btn.current&&btn.current.contains(e.target))||(pop.current&&pop.current.contains(e.target)))return; setOpen(false); }; document.addEventListener('mousedown',h); return ()=>{ window.removeEventListener('scroll',f,true); window.removeEventListener('resize',f); document.removeEventListener('mousedown',h); }; },[open]);
+  return (<>
+    <button ref={btn} type="button" onClick={()=>setOpen(o=>!o)} className={`w-full rounded-xl px-3.5 py-2.5 text-sm text-left flex items-center justify-between gap-2 ${dark?'bg-white/5 border border-white/10 text-lavender-50':'bg-white border border-lavender-200 text-lavender-950'}`}><span className={value?'':'opacity-40'}>{value?prettyDate(value):(placeholder||'Select date')}</span><span className="opacity-50">📅</span></button>
+    {open&&pos&&<div ref={pop} style={{position:'fixed',left:pos.left,top:pos.top,zIndex:80}}><Calendar selected={value} min={min} max={max} onPick={d=>{onChange(d);setOpen(false);}}/>{value&&<div className="text-center mt-1"><button type="button" onClick={()=>{onChange('');setOpen(false);}} className="text-[11px] text-lavender-300/70 hover:text-peach-400 bg-black/30 rounded px-2 py-0.5">Clear date</button></div>}</div>}
+  </>); }
 function RangeField({start,end,onStart,onEnd,min,max,labels}){
-  const {dark}=useContext(Theme); const [open,setOpen]=useState(false); const [pick,setPick]=useState('start'); const ref=useRef();
-  useEffect(()=>{ const h=e=>{ if(ref.current&&!ref.current.contains(e.target)) setOpen(false); }; document.addEventListener('mousedown',h); return ()=>document.removeEventListener('mousedown',h); },[]);
+  const {dark}=useContext(Theme); const [open,setOpen]=useState(false); const [pick,setPick]=useState('start'); const [pos,setPos]=useState(null); const wrap=useRef(); const pop=useRef();
   const L=labels||['Start','End'];
+  const place=()=>{ if(!wrap.current)return; const r=wrap.current.getBoundingClientRect(); const W=264,Hc=346; const left=Math.max(8,Math.min(r.left,window.innerWidth-W-8)); const fits=window.innerHeight-r.bottom>Hc+10; const top=fits?r.bottom+6:Math.max(8,r.top-Hc-2); setPos({left,top}); };
+  useEffect(()=>{ if(!open)return; place(); const f=()=>place(); window.addEventListener('scroll',f,true); window.addEventListener('resize',f); const h=e=>{ if((wrap.current&&wrap.current.contains(e.target))||(pop.current&&pop.current.contains(e.target)))return; setOpen(false); }; document.addEventListener('mousedown',h); return ()=>{ window.removeEventListener('scroll',f,true); window.removeEventListener('resize',f); document.removeEventListener('mousedown',h); }; },[open]);
   const onPick=(iso)=>{ if(pick==='start'){ onStart(iso); if(end&&iso>end) onEnd(''); setPick('end'); } else { if(start&&iso<start){ onStart(iso); onEnd(''); setPick('end'); } else { onEnd(iso); setOpen(false); setPick('start'); } } };
   const nights=(start&&end)?Math.max(0,daysBetween(start,end)):0;
-  const cell=(lbl,val,which)=>(<button type="button" onClick={()=>{setOpen(true);setPick(which);}} className={`flex-1 min-w-0 rounded-xl px-3 py-2 text-sm text-left ${dark?'bg-white/5 text-lavender-50':'bg-white text-lavender-950'} border ${open&&pick===which?'border-lavender-400':(dark?'border-white/10':'border-lavender-200')}`}><div className="text-[9px] uppercase tracking-wide text-lavender-300/60">{lbl}</div><div className={`truncate ${val?'':'opacity-40'}`}>{val?prettyDate(val):'—'}</div></button>);
-  return (<div className="relative" ref={ref}>
+  const cell=(lbl,val,which)=>(<button type="button" onClick={()=>{setPick(which);setOpen(true);}} className={`flex-1 min-w-0 rounded-xl px-3 py-2 text-sm text-left ${dark?'bg-white/5 text-lavender-50':'bg-white text-lavender-950'} border ${open&&pick===which?'border-lavender-400':(dark?'border-white/10':'border-lavender-200')}`}><div className="text-[9px] uppercase tracking-wide text-lavender-300/60">{lbl}</div><div className={`truncate ${val?'':'opacity-40'}`}>{val?prettyDate(val):'—'}</div></button>);
+  return (<div ref={wrap}>
     <div className="flex items-center gap-1.5">{cell(L[0],start,'start')}<span className="text-lavender-300/50">→</span>{cell(L[1],end,'end')}{nights>0&&<span className="text-[11px] text-lavender-300/70 whitespace-nowrap pl-1">{nights}n</span>}</div>
-    {open&&<div className="absolute z-[55] mt-1"><Calendar selected={pick==='start'?start:end} rangeStart={start} rangeEnd={end} min={min} max={max} onPick={onPick}/></div>}
+    {open&&pos&&<div ref={pop} style={{position:'fixed',left:pos.left,top:pos.top,zIndex:80}}><Calendar selected={pick==='start'?start:end} rangeStart={start} rangeEnd={end} min={min} max={max} onPick={onPick}/><div className="text-center mt-1"><span className="text-[11px] text-lavender-300/70 bg-black/30 rounded px-2 py-0.5">{pick==='start'?'Pick '+L[0].toLowerCase():'Pick '+L[1].toLowerCase()}</span></div></div>}
   </div>); }
+
+/* ============================ CITY AUTOCOMPLETE
 
 /* ============================ CITY AUTOCOMPLETE ============================ */
 function CityAutocomplete({value,onChange,placeholder,suggestNext}){
@@ -610,9 +614,13 @@ function PlanView({trip,setTrip,cur,onSave}){
           <Field label="Trip dates" error={c.days<0?'Return must be after departure':null}><RangeField start={trip.departDate} end={trip.returnDate} onStart={d=>setT({departDate:d})} onEnd={d=>setT({returnDate:d})} labels={['Departure','Return']}/></Field>
           <Field label="Default travellers" hint="pre-fills items; set per item below"><div className="flex items-center gap-2"><button type="button" onClick={()=>setT({persons:Math.max(1,(Math.round(num(trip.persons))||1)-1)})} className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 text-lavender-100 text-lg leading-none shrink-0">−</button><Input className="no-spin text-center" type="number" min="1" value={trip.persons||1} onChange={e=>setT({persons:Math.max(1,Math.round(num(e.target.value))||1)})}/><button type="button" onClick={()=>setT({persons:(Math.round(num(trip.persons))||1)+1})} className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 text-lavender-100 text-lg leading-none shrink-0">＋</button></div></Field>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-          <Mini label="Total days" value={c.days>0?c.days:'—'}/><Mini label="Total nights" value={c.nights>0?c.nights:'—'}/>
-          <Mini label="Cities" value={named.length}/><Mini label="Grand total" value={fmt(c.grand,cur)}/>
+        <div className="mt-5 pt-4 border-t border-lavender-400/25">
+          <div className="rounded-2xl p-4 bg-gradient-to-br from-lavender-500/12 to-peach-400/10 border border-lavender-400/30">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-lavender-300/70 font-semibold mb-3 flex items-center gap-2">📋 Trip summary<span className="text-[9px] normal-case tracking-normal text-lavender-300/45 font-normal">· auto-calculated</span></div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[['Total days',c.days>0?c.days:'—'],['Total nights',c.nights>0?c.nights:'—'],['Cities',named.length],['Grand total',fmt(c.grand,cur)]].map((row,i)=>(<div key={i}><div className="text-[10px] uppercase tracking-wide font-semibold text-lavender-300/60">{row[0]}</div><div className="font-display text-2xl iridescent-text leading-tight break-words">{row[1]}</div></div>))}
+            </div>
+          </div>
         </div>
       </Collapse>
 
@@ -655,7 +663,12 @@ function PlanView({trip,setTrip,cur,onSave}){
                   {(tr.type==='car'||tr.type==='driver')? <div className="sm:col-span-2 lg:col-span-2"><Field label="Rental period"><RangeField start={tr.startDate} end={tr.endDate} onStart={d=>updTr(tr.id,{startDate:d})} onEnd={d=>updTr(tr.id,{endDate:d})} min={trip.departDate} max={trip.returnDate} labels={['Pick-up','Drop-off']}/></Field></div> : <><Field label="Date"><DateField value={tr.startDate} onChange={d=>updTr(tr.id,{startDate:d})} min={trip.departDate} max={trip.returnDate}/></Field><Field label="End date" hint="opt"><DateField value={tr.endDate} onChange={d=>updTr(tr.id,{endDate:d})} min={tr.startDate||trip.departDate} max={trip.returnDate}/></Field></>}
                   <Field label="Start time" hint="opt"><Input type="time" value={tr.startTime} onChange={e=>updTr(tr.id,{startTime:e.target.value})}/></Field>
                   <Field label="End time" hint="opt"><Input type="time" value={tr.endTime} onChange={e=>updTr(tr.id,{endTime:e.target.value})}/></Field>
-                  {(tr.type==='car'||tr.type==='driver')? <Field label="Price / day" hint={usageDays(tr)+' day'+(usageDays(tr)>1?'s':'')}><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={tr.perDay} placeholder="0" onChange={e=>updTr(tr.id,{perDay:e.target.value})}/><CurSel value={tr.currency} onChange={v=>updTr(tr.id,{currency:v})}/></div></Field> : <Field label="Price (total)"><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={tr.cost} placeholder="0" onChange={e=>updTr(tr.id,{cost:e.target.value})}/><CurSel value={tr.currency} onChange={v=>updTr(tr.id,{currency:v})}/></div></Field>}
+                  {(()=>{ const pm=tr.priceMode||((tr.type==='car'||tr.type==='driver')?'perDay':'total'); const ud=usageDays(tr); const autoTot=num(tr.perDay)*ud; return (<>
+                  <Field label="Pricing"><Select value={pm} onChange={e=>updTr(tr.id,{priceMode:e.target.value})}><option value="total">Total price</option><option value="perDay">Per day × days</option></Select></Field>
+                  {pm==='perDay'? <><Field label="Cost / day"><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={tr.perDay} placeholder="0" onChange={e=>updTr(tr.id,{perDay:e.target.value})}/><CurSel value={tr.currency} onChange={v=>updTr(tr.id,{currency:v})}/></div></Field>
+                  <Field label="Total" hint={ud+' day'+(ud>1?'s':'')+(num(tr.perDay)?' · auto '+fmt(autoTot,itemCur(tr,trip)):'')}><Input className="no-spin" type="number" min="0" value={tr.cost} placeholder={autoTot?String(autoTot):'auto'} onChange={e=>updTr(tr.id,{cost:e.target.value})}/></Field></>
+                  : <Field label="Total price"><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={tr.cost} placeholder="0" onChange={e=>updTr(tr.id,{cost:e.target.value})}/><CurSel value={tr.currency} onChange={v=>updTr(tr.id,{currency:v})}/></div></Field>}
+                  </>); })()}
                   <Field label="Passengers"><Input className="no-spin" type="number" min="1" value={tr.persons||''} placeholder={String(trip.persons||1)} onChange={e=>updTr(tr.id,{persons:e.target.value})}/></Field>
                   <Field label="Booking ref" hint="opt"><Input value={tr.ref} placeholder="ABC123" onChange={e=>updTr(tr.id,{ref:e.target.value})}/></Field>
                   <Field label="Notes" hint="opt"><Input value={tr.notes} placeholder="Seat, terminal…" onChange={e=>updTr(tr.id,{notes:e.target.value})}/></Field>
