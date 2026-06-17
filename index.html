@@ -101,7 +101,7 @@ const CURRENCIES = {
 function convertAmount(a,from,to){ if(from===to) return a; return (a/CURRENCIES[from].perSAR)*CURRENCIES[to].perSAR; }
 const TRANSPORT_TYPES = {
   flight:{label:'Flight',icon:'✈️'}, train:{label:'Train',icon:'🚆'}, bus:{label:'Bus',icon:'🚌'},
-  ferry:{label:'Ferry',icon:'⛴️'}, car:{label:'Car rental',icon:'🚗'},
+  ferry:{label:'Ferry',icon:'⛴️'}, car:{label:'Car rental',icon:'🚗'}, taxi:{label:'Taxi / ride',icon:'🚕'}, driver:{label:'Private driver',icon:'🧑‍✈️'},
 };
 const CITY_DB = {
   'riyadh':[46.72,24.69,'Asia/Riyadh'],'jeddah':[39.20,21.49,'Asia/Riyadh'],'dammam':[50.10,26.43,'Asia/Riyadh'],
@@ -159,33 +159,56 @@ function tripNodes(trip){ return trip.nodes||[]; }
 function pax(p,trip){ const n=Math.round(num(p)); if(n>=1)return n; const d=Math.round(num(trip&&trip.persons)); return d>=1?d:1; }
 const BKEYS=['food','entertainment','shopping','localTransport','pocket'];
 function suggestLegDate(trip,fromId,toId){ const fo=trip.hotels.filter(h=>h.cityId===fromId&&h.checkOut).map(h=>h.checkOut).sort(); if(fo.length) return fo[fo.length-1]; const ti=trip.hotels.filter(h=>h.cityId===toId&&h.checkIn).map(h=>h.checkIn).sort(); if(ti.length) return ti[0]; return ''; }
-function tripChecks(trip){ const w=[]; const nodes=tripNodes(trip); const dep=trip.departDate, ret=trip.returnDate;
+function tripChecks(trip){ const w=[]; const dep=trip.departDate,ret=trip.returnDate;
   if(dep&&ret&&daysBetween(dep,ret)<0) w.push({level:'error',msg:'Return date is before departure date.'});
-  const hs=trip.hotels.filter(h=>h.checkIn&&h.checkOut);
-  hs.forEach(h=>{ const nm=h.name||'Hotel'; if(daysBetween(h.checkIn,h.checkOut)<=0) w.push({level:'error',msg:nm+': check-out is not after check-in.'}); });
-  hs.forEach(h=>{ const nm=h.name||'Hotel'; if(dep&&h.checkIn<dep) w.push({level:'warn',msg:nm+' checks in before the trip starts ('+prettyDate(h.checkIn)+').'}); if(ret&&h.checkOut>ret) w.push({level:'warn',msg:nm+' checks out after the trip ends ('+prettyDate(h.checkOut)+').'}); });
+  const hs=(trip.hotels||[]).filter(h=>h.checkIn&&h.checkOut);
+  hs.forEach(h=>{ if(daysBetween(h.checkIn,h.checkOut)<=0) w.push({level:'error',msg:(h.name||'Hotel')+': check-out is not after check-in.'}); });
+  hs.forEach(h=>{ if(dep&&h.checkIn<dep) w.push({level:'warn',msg:(h.name||'Hotel')+' checks in before the trip starts.'}); if(ret&&h.checkOut>ret) w.push({level:'warn',msg:(h.name||'Hotel')+' checks out after the trip ends.'}); });
   const sorted=[...hs].sort((a,b)=>a.checkIn.localeCompare(b.checkIn));
   for(let i=0;i<sorted.length-1;i++){ if(sorted[i+1].checkIn<sorted[i].checkOut) w.push({level:'warn',msg:'Overlapping stays: '+(sorted[i].name||'Hotel')+' & '+(sorted[i+1].name||'Hotel')+'.'}); }
-  const legs=[]; for(let i=0;i<nodes.length-1;i++){ const t=trip.transports.find(x=>x.fromId===nodes[i].id&&x.toId===nodes[i+1].id); if(t&&t.date) legs.push({t,from:nodes[i],to:nodes[i+1]}); }
-  legs.forEach(({t,from,to})=>{ const lab=(from.name||'?')+'→'+(to.name||'?'); if(dep&&t.date<dep) w.push({level:'warn',msg:'Transport '+lab+' is dated before the trip starts.'}); if(ret&&t.date>ret) w.push({level:'warn',msg:'Transport '+lab+' is dated after the trip ends.'}); });
-  for(let i=0;i<legs.length-1;i++){ if(legs[i].t.date>legs[i+1].t.date) w.push({level:'warn',msg:'Travel legs are out of date order ('+(legs[i].from.name||'?')+'→'+(legs[i].to.name||'?')+' comes after the next leg).'}); }
-  legs.forEach(({t,from})=>{ const fo=trip.hotels.filter(h=>h.cityId===from.id&&h.checkOut).map(h=>h.checkOut).sort(); if(fo.length){ const lo=fo[fo.length-1]; if(t.date<lo) w.push({level:'warn',msg:'You leave '+(from.name||'?')+' on '+prettyDate(t.date)+' but check out on '+prettyDate(lo)+'.'}); } });
-  if(dep&&ret&&daysBetween(dep,ret)>0){ const nights=daysBetween(dep,ret); const cov=new Set(); hs.forEach(h=>{ let d=h.checkIn; let g=0; while(d<h.checkOut&&g<400){ cov.add(d); d=addDays(d,1); g++; } }); const gaps=[]; for(let k=0;k<nights;k++){ const d=addDays(dep,k); if(!cov.has(d)) gaps.push(d); } if(gaps.length&&hs.length) w.push({level:'info',msg:gaps.length+' night'+(gaps.length>1?'s':'')+' without accommodation (first: '+prettyDate(gaps[0])+').'}); }
+  (trip.transports||[]).forEach(t=>{ const d=t.startDate; const lab=(TRANSPORT_TYPES[t.type]||{label:'transport'}).label; if(d){ if(dep&&d<dep) w.push({level:'warn',msg:'A '+lab+' is dated before the trip starts.'}); if(ret&&d>ret) w.push({level:'warn',msg:'A '+lab+' is dated after the trip ends.'}); } });
+  (trip.spend||[]).forEach(s=>{ if(s.date){ if(dep&&s.date<dep) w.push({level:'warn',msg:(s.name||'An activity')+' is dated before the trip starts.'}); if(ret&&s.date>ret) w.push({level:'warn',msg:(s.name||'An activity')+' is dated after the trip ends.'}); } });
   return w; }
 function routeNodes(trip){ return tripNodes(trip).map(n=>n.name).filter(Boolean); }
 function segId(a,b){ return a+'>'+b; }
 function mapsHref(q){ if(!q)return null; if(/^https?:\/\//i.test(q)) return q; return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(q); }
 function mapsEmbed(q){ if(!q)return null; let query=q; const m=q.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/); if(m){query=m[1]+','+m[2];} else if(/^https?:\/\//i.test(q)){ const qm=q.match(/[?&]q=([^&]+)/); query=qm?decodeURIComponent(qm[1]):q.replace(/^https?:\/\//,''); } return 'https://maps.google.com/maps?q='+encodeURIComponent(query)+'&z=14&output=embed'; }
-/* migrate old (origin/destination/cities) trips to node graph */
-function migrateTrip(t){ if(t.nodes) return t; const nodes=[];
-  if(t.origin!==undefined||t.destination!==undefined||t.cities){
-    nodes.push({id:uid(),name:t.origin||'',anchor:'start'});
-    (t.cities||[]).forEach(c=>nodes.push({id:c.id||uid(),name:c.name||''}));
-    nodes.push({id:uid(),name:t.destination||'',anchor:'end'});
-    const transports=(t.transports||[]).map(x=>{ const f=nodes.find(n=>cityKey(n.name)===cityKey(x.from)); const to=nodes.find(n=>cityKey(n.name)===cityKey(x.to)); return {...x,fromId:f&&f.id,toId:to&&to.id}; }).filter(x=>x.fromId&&x.toId);
-    return {...t,nodes,transports};
-  }
-  return {...t,nodes:[{id:uid(),name:'',anchor:'start'},{id:uid(),name:'',anchor:'end'}]}; }
+/* migrate trips to city-scoped v5 model */
+function migrateTrip(t){ if(t.__v5) return t; let nt={...t};
+  if(!nt.nodes){ const nodes=[];
+    if(nt.origin!==undefined||nt.destination!==undefined||nt.cities){ nodes.push({id:uid(),name:nt.origin||'',anchor:'start'}); (nt.cities||[]).forEach(c=>nodes.push({id:c.id||uid(),name:c.name||''})); nodes.push({id:uid(),name:nt.destination||'',anchor:'end'}); }
+    else { nodes.push({id:uid(),name:'',anchor:'start'},{id:uid(),name:'',anchor:'end'}); }
+    nt.nodes=nodes; }
+  const nodes=nt.nodes;
+  nt.transports=(nt.transports||[]).map(x=>{ if(x.cityId&&x.startDate!==undefined) return x;
+    let toId=x.cityId||x.toId; if(!toId&&x.to){ const m=nodes.find(n=>cityKey(n.name)===cityKey(x.to)); toId=m&&m.id; }
+    if(!toId&&x.fromId){ const fi=nodes.findIndex(n=>n.id===x.fromId); toId=(fi>=0&&nodes[fi+1])?nodes[fi+1].id:x.fromId; }
+    if(!toId){ const st=nodes.find(n=>!n.anchor)||nodes[0]; toId=st&&st.id; }
+    const fromNm=x.from||(x.fromId?(nodes.find(n=>n.id===x.fromId)||{}).name:'')||'';
+    const toNm=x.to||(toId?(nodes.find(n=>n.id===toId)||{}).name:'')||'';
+    return {id:x.id||uid(),cityId:toId,type:x.type||'flight',provider:x.provider||'',from:fromNm,to:toNm,startDate:x.startDate||x.date||'',startTime:x.startTime||x.time||'',endDate:x.endDate||'',endTime:x.endTime||'',ref:x.ref||'',cost:x.cost||'',currency:x.currency||nt.baseCurrency||'SAR',persons:x.persons||'',notes:x.notes||'',attachments:x.attachments||[]}; });
+  if(!nt.spend){ const sp=[]; const CB=nt.cityBudgets||{}; const LB={food:'Food',entertainment:'Entertainment',shopping:'Shopping',localTransport:'Local transport',pocket:'Pocket money'};
+    Object.keys(CB).forEach(cid=>{ const b=CB[cid]||{}; Object.keys(LB).forEach(k=>{ if(num(b[k])>0) sp.push({id:uid(),cityId:cid,name:LB[k],category:LB[k],desc:'',location:'',date:'',time:'',persons:'',perPerson:String(num(b[k])),currency:nt.baseCurrency||'SAR',ref:'',notes:'',attachments:[]}); }); });
+    nt.spend=sp; }
+  if(!nt.hotels) nt.hotels=[]; if(!nt.tripExpenses) nt.tripExpenses={};
+  nt.__v5=true; return nt; }
+const SPEND_CATS=['Theme park','Museum','Restaurant','Tour','Activity','Shopping','Event','Park','Tickets','Local transport','Hotel extra','Other'];
+function itemCur(it,trip){ return (it&&it.currency)||trip.baseCurrency||'SAR'; }
+function transportBase(t,trip){ return convertAmount(num(t.cost),itemCur(t,trip),trip.baseCurrency||'SAR'); }
+function spendNative(s){ return num(s.perPerson)*Math.max(1,Math.round(num(s.persons))||1); }
+function spendBase(s,trip){ return convertAmount(spendNative(s),itemCur(s,trip),trip.baseCurrency||'SAR'); }
+function hotelBase(h,trip){ return convertAmount(hotelCost(h),(h&&h.currency)||trip.baseCurrency||'SAR',trip.baseCurrency||'SAR'); }
+function cityWindows(trip){ const nodes=tripNodes(trip); const dep=trip.departDate,ret=trip.returnDate; const out={};
+  nodes.forEach(n=>out[n.id]={arrive:dep||'',depart:ret||dep||''}); if(!dep) return out;
+  const startN=nodes.find(n=>n.anchor==='start'), endN=nodes.find(n=>n.anchor==='end'); const stops=nodes.filter(n=>!n.anchor);
+  if(startN) out[startN.id]={arrive:dep,depart:dep}; if(endN) out[endN.id]={arrive:ret||dep,depart:ret||dep};
+  const total=Math.max(0,daysBetween(dep,ret));
+  const nightsOf=id=>{ const hs=(trip.hotels||[]).filter(h=>h.cityId===id&&h.checkIn&&h.checkOut); return hs.reduce((a,h)=>{const n=daysBetween(h.checkIn,h.checkOut);return a+(n>0?n:0);},0); };
+  let known=0,unknown=0; const kn={}; stops.forEach(n=>{ const k=nightsOf(n.id); kn[n.id]=k; if(k>0)known+=k; else unknown++; });
+  let rem=Math.max(0,total-known); const baseN=unknown?Math.floor(rem/unknown):0; let extra=unknown?rem-baseN*unknown:0; let cursor=dep;
+  stops.forEach((n,i)=>{ let nights=kn[n.id]; if(!nights||nights<=0){ nights=baseN+(extra>0?1:0); if(extra>0)extra--; } const arrive=cursor; const isLast=(i===stops.length-1)&&!endN; const depart=isLast?(ret||addDays(cursor,nights)):addDays(cursor,nights); out[n.id]={arrive,depart}; cursor=depart; });
+  return out; }
+function CurSel({value,onChange}){ const {dark}=useContext(Theme); return <select value={value||'SAR'} onChange={e=>onChange(e.target.value)} className={`rounded-xl px-2 py-2.5 text-sm shrink-0 ${dark?'bg-white/5 border border-white/10 text-lavender-50':'bg-white border border-lavender-200 text-lavender-950'}`}>{Object.keys(CURRENCIES).map(k=><option key={k} value={k}>{k}</option>)}</select>; }
 
 /* ============================ INDEXEDDB ============================ */
 const IDB={ db:null,
@@ -323,33 +346,29 @@ function Line({labels,values,dark,height=210}){ const ref=useChart(()=>({type:'l
 function hotelCost(h){ const n=daysBetween(h.checkIn,h.checkOut); const r=Math.max(1,num(h.rooms)||1); return (n>0?n:0)*num(h.perNight)*r+num(h.taxes); }
 function useComputed(trip){
   return useMemo(()=>{
-    const {departDate,returnDate,transports,hotels,cityBudgets,tripExpenses}=trip;
-    const nodes=tripNodes(trip); const defaultPax=pax(null,trip);
-    const days=daysBetween(departDate,returnDate); const nights=days>0?days:0;
-    const accommodationTotal=hotels.reduce((s,h)=>s+hotelCost(h),0);
-    const transportTotal=transports.reduce((s,t)=>s+num(t.cost)*pax(t.persons,trip),0);
+    const {departDate,returnDate,tripExpenses={}}=trip; const hotels=trip.hotels||[]; const transports=trip.transports||[]; const spend=trip.spend||[];
+    const nodes=tripNodes(trip); const defaultPax=pax(null,trip); const days=daysBetween(departDate,returnDate); const nights=days>0?days:0; const win=cityWindows(trip);
+    const accommodationTotal=hotels.reduce((s,h)=>s+hotelBase(h,trip),0);
+    const transportTotal=transports.reduce((s,t)=>s+transportBase(t,trip),0);
+    const spendTotal=spend.reduce((s,x)=>s+spendBase(x,trip),0);
     const miscTotal=Object.values(tripExpenses).reduce((s,e)=>s+num(e.amount)*pax(e.persons,trip),0);
-    const cityBudgetTotal=nodes.reduce((s,n)=>{ const b=cityBudgets[n.id]||{}; const base=BKEYS.reduce((x,k)=>x+num(b[k]),0); return s+base*pax(n.persons,trip); },0);
-    const grand=accommodationTotal+transportTotal+cityBudgetTotal+miscTotal;
+    const grand=accommodationTotal+transportTotal+spendTotal+miscTotal;
     const cityInfo=nodes.map((node,idx)=>{
-      const p=pax(node.persons,trip);
-      const ch=hotels.filter(h=>h.cityId===node.id);
+      const ch=hotels.filter(h=>h.cityId===node.id); const ctr=transports.filter(t=>t.cityId===node.id); const csp=spend.filter(s=>s.cityId===node.id);
+      const accom=ch.reduce((s,h)=>s+hotelBase(h,trip),0); const trans=ctr.reduce((s,t)=>s+transportBase(t,trip),0); const sp=csp.reduce((s,x)=>s+spendBase(x,trip),0);
       const cn=ch.reduce((s,h)=>{const n=daysBetween(h.checkIn,h.checkOut);return s+(n>0?n:0);},0);
-      const accom=ch.reduce((s,h)=>s+hotelCost(h),0);
-      const inbound=transports.find(t=>t.toId===node.id);
-      const outbound=transports.find(t=>t.fromId===node.id);
-      const transIn=inbound?num(inbound.cost)*pax(inbound.persons,trip):0;
-      const checkIns=ch.map(h=>h.checkIn).filter(Boolean).sort(); const checkOuts=ch.map(h=>h.checkOut).filter(Boolean).sort();
-      const arrive=(inbound&&inbound.date)||checkIns[0]||''; const depart=(outbound&&outbound.date)||checkOuts[checkOuts.length-1]||'';
-      const b=cityBudgets[node.id]||{}; const budget=BKEYS.reduce((x,k)=>x+num(b[k]),0)*p;
-      return {city:{id:node.id,name:node.name},anchor:node.anchor,idx,persons:p,hotels:ch,nights:cn||(arrive&&depart?Math.max(0,daysBetween(arrive,depart)):0),accom,transIn,inbound,outbound,arrive,depart,budget,total:accom+budget+transIn,coord:cityCoord(node.name)};
+      const wnd=win[node.id]||{arrive:'',depart:''};
+      const arrive=(ch.map(h=>h.checkIn).filter(Boolean).sort()[0])||wnd.arrive||''; const depart=(ch.map(h=>h.checkOut).filter(Boolean).sort().slice(-1)[0])||wnd.depart||'';
+      const nightsC=cn||(arrive&&depart?Math.max(0,daysBetween(arrive,depart)):0);
+      return {city:{id:node.id,name:node.name},anchor:node.anchor,idx,hotels:ch,transports:ctr,spend:csp,nights:nightsC,accom,transSum:trans,spendSum:sp,inbound:ctr[0],outbound:ctr[ctr.length-1],arrive,depart,total:accom+trans+sp,coord:cityCoord(node.name)};
     });
-    const cat={Food:0,Entertainment:0,Shopping:0,'Local transport':0,'Pocket money':0};
-    nodes.forEach(n=>{ const b=cityBudgets[n.id]||{}; const p=pax(n.persons,trip); cat.Food+=num(b.food)*p; cat.Entertainment+=num(b.entertainment)*p; cat.Shopping+=num(b.shopping)*p; cat['Local transport']+=num(b.localTransport)*p; cat['Pocket money']+=num(b.pocket)*p; });
-    const categoryBreakdown=[{label:'Accommodation',value:Math.round(accommodationTotal)},{label:'Transport',value:Math.round(transportTotal)},{label:'Food',value:Math.round(cat.Food)},{label:'Entertainment',value:Math.round(cat.Entertainment)},{label:'Shopping',value:Math.round(cat.Shopping)},{label:'Local transport',value:Math.round(cat['Local transport'])},{label:'Pocket money',value:Math.round(cat['Pocket money'])},{label:'Trip-wide',value:Math.round(miscTotal)}].filter(d=>d.value>0);
-    const transportByType={}; transports.forEach(t=>{ const k=TRANSPORT_TYPES[t.type].label; transportByType[k]=(transportByType[k]||0)+num(t.cost)*pax(t.persons,trip); });
+    const catMap={Accommodation:accommodationTotal,Transport:transportTotal};
+    spend.forEach(s=>{ const k=(s.category||'Other'); catMap[k]=(catMap[k]||0)+spendBase(s,trip); });
+    if(miscTotal>0) catMap['Trip-wide']=miscTotal;
+    const categoryBreakdown=Object.entries(catMap).map(([label,value])=>({label,value:Math.round(value)})).filter(d=>d.value>0);
+    const transportByType={}; transports.forEach(t=>{ const k=(TRANSPORT_TYPES[t.type]||{label:t.type}).label; transportByType[k]=(transportByType[k]||0)+transportBase(t,trip); });
     const flights=transports.filter(t=>t.type==='flight').length; const trains=transports.filter(t=>t.type==='train').length;
-    return {days,nights,accommodationTotal,transportTotal,cityBudgetTotal,miscTotal,grand,cityInfo,categoryBreakdown,transportByType,flights,trains,avgDaily:days>0?grand/days:0,persons:defaultPax};
+    return {days,nights,accommodationTotal,transportTotal,spendTotal,cityBudgetTotal:spendTotal,miscTotal,grand,cityInfo,categoryBreakdown,transportByType,flights,trains,avgDaily:days>0?grand/days:0,persons:defaultPax,win};
   },[JSON.stringify(trip)]);
 }
 
@@ -373,7 +392,7 @@ function InteractiveMap({trip,cityInfo,dark,onFocusCity,focusKey,simplified}){
     if(!pmap[k]) pmap[k]={x,y,name:n.name,ci}; } });
   const segs=[];
   for(let i=0;i<nodes.length-1;i++){ const a=cityCoord(nodes[i].name),b=cityCoord(nodes[i+1].name); if(!a||!b)continue;
-    const t=trip.transports.find(x=>x.fromId===nodes[i].id&&x.toId===nodes[i+1].id);
+    const tl=(trip.transports||[]).filter(x=>x.cityId===nodes[i+1].id); const t=tl.find(x=>x.type==='flight'||x.type==='train'||x.type==='ferry'||x.type==='bus')||tl[0];
     const [x1,y1]=proj(a.lon,a.lat),[x2,y2]=proj(b.lon,b.lat); const st=lineStyle(t?t.type:'flight');
     const mx=(x1+x2)/2, my=(y1+y2)/2 - Math.abs(x2-x1)*st.curve - 18;
     segs.push({x1,y1,x2,y2,mx,my,type:t?t.type:'flight',st}); }
@@ -504,40 +523,41 @@ function PlanView({trip,setTrip,cur,onSave}){
   const setT=(patch)=>setTrip(t=>({...t,...patch}));
   const nodes=tripNodes(trip);
   const infoById={}; c.cityInfo.forEach(ci=>{infoById[ci.city.id]=ci;});
+  const win=c.win||{};
   const checks=tripChecks(trip); const errs=checks.filter(x=>x.level==='error').length, warns=checks.filter(x=>x.level==='warn').length;
   const [dragIdx,setDragIdx]=useState(null); const [overIdx,setOverIdx]=useState(null);
   const norm=(arr)=>{ const start=arr.filter(n=>n.anchor==='start'); const end=arr.filter(n=>n.anchor==='end'); const mid=arr.filter(n=>!n.anchor); return [...start,...mid,...end]; };
-
   const setNode=(id,patch)=>setTrip(t=>({...t,nodes:t.nodes.map(n=>n.id===id?{...n,...patch}:n)}));
   const addStop=()=>setTrip(t=>{ const a=[...t.nodes]; const ei=a.findIndex(n=>n.anchor==='end'); a.splice(ei>=0?ei:a.length,0,{id:uid(),name:''}); return {...t,nodes:a}; });
   const insertAt=(idx)=>setTrip(t=>{ const a=[...t.nodes]; a.splice(idx,0,{id:uid(),name:''}); return {...t,nodes:norm(a)}; });
-  const removeNode=(id)=>setTrip(t=>{ const {[id]:_,...cb}=t.cityBudgets; return {...t,nodes:t.nodes.filter(n=>n.id!==id),hotels:t.hotels.filter(h=>h.cityId!==id),cityBudgets:cb,transports:t.transports.filter(x=>x.fromId!==id&&x.toId!==id)}; });
+  const removeNode=(id)=>setTrip(t=>({...t,nodes:t.nodes.filter(n=>n.id!==id),hotels:(t.hotels||[]).filter(h=>h.cityId!==id),transports:(t.transports||[]).filter(x=>x.cityId!==id),spend:(t.spend||[]).filter(x=>x.cityId!==id)}));
   const reorder=(from,to)=>setTrip(t=>{ const a=[...t.nodes]; const [m]=a.splice(from,1); a.splice(to,0,m); return {...t,nodes:norm(a)}; });
-
-  // prune orphan transports when node order changes
-  const sig=nodes.map(n=>n.id).join('>');
-  useEffect(()=>{ setTrip(t=>{ const valid=new Set(); const ns=t.nodes; for(let i=0;i<ns.length-1;i++) valid.add(ns[i].id+'>'+ns[i+1].id); const kept=t.transports.filter(x=>valid.has(x.fromId+'>'+x.toId)); return kept.length===t.transports.length?t:{...t,transports:kept}; }); },[sig]);
-
-  const updSeg=(fromId,toId,patch)=>setTrip(t=>{ const ex=t.transports.find(x=>x.fromId===fromId&&x.toId===toId); if(ex){ return {...t,transports:t.transports.map(x=>x===ex?{...x,...patch}:x)}; } return {...t,transports:[...t.transports,{id:uid(),type:'flight',fromId,toId,date:'',provider:'',ref:'',cost:'',notes:'',attachments:[],...patch}]}; });
-  const getSeg=(fromId,toId)=>trip.transports.find(x=>x.fromId===fromId&&x.toId===toId);
-
-  const addH=(cityId)=>setTrip(t=>({...t,hotels:[...t.hotels,{id:uid(),cityId,name:'',mapLink:'',checkIn:'',checkOut:'',perNight:'',rooms:'1',taxes:'',attachments:[]}]}));
-  const updH=(id,patch)=>setTrip(t=>({...t,hotels:t.hotels.map(x=>x.id===id?{...x,...patch}:x)}));
-  const rmH=(id)=>setTrip(t=>({...t,hotels:t.hotels.filter(x=>x.id!==id)}));
-  const updCB=(cityId,k,v)=>setTrip(t=>({...t,cityBudgets:{...t.cityBudgets,[cityId]:{...(t.cityBudgets[cityId]||{}),[k]:v}}}));
-  const BCATS=[['food','Food'],['entertainment','Entertainment'],['shopping','Shopping'],['localTransport','Local transport'],['pocket','Pocket money']];
+  const addTr=(cityId)=>setTrip(t=>{ const wd=win[cityId]||{}; const nm=(t.nodes.find(n=>n.id===cityId)||{}).name||''; return {...t,transports:[...(t.transports||[]),{id:uid(),cityId,type:'flight',provider:'',from:'',to:nm,startDate:wd.arrive||t.departDate||'',startTime:'',endDate:'',endTime:'',ref:'',cost:'',currency:t.baseCurrency||'SAR',persons:t.persons||'',notes:'',attachments:[]}]}; });
+  const updTr=(id,patch)=>setTrip(t=>({...t,transports:(t.transports||[]).map(x=>x.id===id?{...x,...patch}:x)}));
+  const rmTr=(id)=>setTrip(t=>({...t,transports:(t.transports||[]).filter(x=>x.id!==id)}));
+  const moveTr=(id,dir)=>setTrip(t=>{ const arr=[...(t.transports||[])]; const idx=arr.findIndex(x=>x.id===id); if(idx<0)return t; const cid=arr[idx].cityId; let j=-1; if(dir<0){for(let k=idx-1;k>=0;k--){if(arr[k].cityId===cid){j=k;break;}}}else{for(let k=idx+1;k<arr.length;k++){if(arr[k].cityId===cid){j=k;break;}}} if(j<0)return t; const tmp=arr[idx];arr[idx]=arr[j];arr[j]=tmp; return {...t,transports:arr}; });
+  const addH=(cityId)=>setTrip(t=>{ const wd=win[cityId]||{}; return {...t,hotels:[...(t.hotels||[]),{id:uid(),cityId,name:'',mapLink:'',checkIn:wd.arrive||'',checkOut:wd.depart||'',perNight:'',rooms:'1',taxes:'',currency:t.baseCurrency||'SAR',persons:t.persons||'',attachments:[]}]}; });
+  const updH=(id,patch)=>setTrip(t=>({...t,hotels:(t.hotels||[]).map(x=>x.id===id?{...x,...patch}:x)}));
+  const rmH=(id)=>setTrip(t=>({...t,hotels:(t.hotels||[]).filter(x=>x.id!==id)}));
+  const addSp=(cityId)=>setTrip(t=>{ const wd=win[cityId]||{}; return {...t,spend:[...(t.spend||[]),{id:uid(),cityId,name:'',category:'Activity',desc:'',location:'',date:wd.arrive||t.departDate||'',time:'',persons:t.persons||'',perPerson:'',currency:t.baseCurrency||'SAR',ref:'',notes:'',attachments:[]}]}; });
+  const updSp=(id,patch)=>setTrip(t=>({...t,spend:(t.spend||[]).map(x=>x.id===id?{...x,...patch}:x)}));
+  const rmSp=(id)=>setTrip(t=>({...t,spend:(t.spend||[]).filter(x=>x.id!==id)}));
   const updTE=(k,patch)=>setTrip(t=>({...t,tripExpenses:{...t.tripExpenses,[k]:{...(t.tripExpenses[k]||{amount:'',attachments:[]}),...patch}}}));
   const TE=[['visa','Visa fees'],['insurance','Travel insurance'],['sim','eSIM / SIM'],['transfers','Airport transfers'],['luggage','Luggage fees'],['emergency','Emergency buffer']];
-
   const startNode=nodes.find(n=>n.anchor==='start')||nodes[0]; const endNode=nodes.find(n=>n.anchor==='end')||nodes[nodes.length-1];
   const nodeLabel=(n,i)=>n.anchor==='start'?'Start':n.anchor==='end'?'Return':'Stop '+i;
+  const named=nodes.filter(n=>n.name);
+  const cardBg=dark?'bg-white/[0.025] border border-white/8':'bg-lavender-50/50 border border-lavender-200';
+  const itemBg=dark?'rounded-lg p-3 bg-white/[0.03] border border-white/8':'rounded-lg p-3 bg-white border border-white/8';
+  const dwin=(id)=>win[id]||{};
 
   return (
     <div className="space-y-4 pb-24">
       {(checks.length>0)?(<Card className={`p-4 slide-up border-l-4 ${errs?'border-l-peach-500':warns?'border-l-peach-400':'border-l-teal2-500'}`} style={{borderLeftWidth:4}}>
         <div className="text-[11px] uppercase tracking-wide font-semibold text-lavender-300/70 mb-2">Date checks · {errs?`${errs} issue${errs>1?'s':''}`:`${warns} to review`}</div>
         <ul className="space-y-1.5">{checks.map((w,i)=>(<li key={i} className="flex items-start gap-2 text-sm"><span className="shrink-0">{w.level==='error'?'⛔':w.level==='warn'?'⚠️':'ℹ️'}</span><span className={w.level==='error'?'text-peach-400':w.level==='warn'?'text-peach-300':'text-lavender-200/80'}>{w.msg}</span></li>))}</ul>
-      </Card>):((trip.departDate&&trip.returnDate&&trip.hotels.length>0)?(<Card className="p-3 slide-up border-l-4 border-l-teal2-500" style={{borderLeftWidth:4}}><div className="text-sm text-teal2-400 flex items-center gap-2">✓ Dates look consistent across legs and stays.</div></Card>):null)}
+      </Card>):((trip.departDate&&trip.returnDate&&(trip.hotels||[]).length>0)?(<Card className="p-3 slide-up border-l-4 border-l-teal2-500" style={{borderLeftWidth:4}}><div className="text-sm text-teal2-400 flex items-center gap-2">✓ Dates look consistent across legs and stays.</div></Card>):null)}
+
       <Collapse step="1" kicker="Trip backbone" title="Start & return" right={<span className="text-xs text-lavender-300/70 hidden sm:block">{c.days>0?`${c.days} days · ${c.nights} nights`:''}</span>}>
         <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Trip name"><Input placeholder="e.g. Europe Summer" value={trip.name} onChange={e=>setT({name:e.target.value})}/></Field>
@@ -551,12 +571,12 @@ function PlanView({trip,setTrip,cur,onSave}){
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
           <Mini label="Total days" value={c.days>0?c.days:'—'}/><Mini label="Total nights" value={c.nights>0?c.nights:'—'}/>
-          <Mini label="Cities" value={nodes.filter(n=>n.name).length}/><Mini label="Grand total" value={fmt(c.grand,cur)}/>
+          <Mini label="Cities" value={named.length}/><Mini label="Grand total" value={fmt(c.grand,cur)}/>
         </div>
       </Collapse>
 
       <Collapse step="2" kicker="Itinerary graph" title="Cities & order" right={<Btn onClick={addStop}>＋ Add stop</Btn>}>
-        <div className="text-[11px] text-lavender-300/50 mb-3">Drag <span className="text-lavender-200">⠿</span> to reorder · cities can repeat (multi-visit) · every city is budgeted equally</div>
+        <div className="text-[11px] text-lavender-300/50 mb-3">Drag <span className="text-lavender-200">⠿</span> to reorder · cities can repeat (multi-visit) · dates auto-fill from your trip dates</div>
         <div className="space-y-2">
           {nodes.map((n,i)=>{ const info=infoById[n.id]; const prev=nodes[i-1]; const suggest=prev&&prev.name?POPULAR_NEXT[cityKey(prev.name)]:null; const movable=!n.anchor;
             return (<div key={n.id}>
@@ -574,65 +594,98 @@ function PlanView({trip,setTrip,cur,onSave}){
         </div>
       </Collapse>
 
-      <Collapse step="3" kicker="Transportation · optional" title="How you move" defaultOpen={false} right={<span className="text-sm iridescent-text font-display">{fmt(c.transportTotal,cur)}</span>}>
-        <div className="text-[11px] text-lavender-300/50 mb-3">Optional — skip it for fast planning, or add airline / operator details per leg.</div>
-        {nodes.length<2? <Empty text="Add at least two cities to define transport legs."/> :
-        <div className="space-y-3">
-          {nodes.slice(0,-1).map((from,i)=>{ const to=nodes[i+1]; const t=getSeg(from.id,to.id)||{type:'flight',provider:'',ref:'',cost:'',date:'',notes:'',attachments:[]}; const sug=suggestLegDate(trip,from.id,to.id);
-            return (<div key={from.id+to.id} className={`rounded-xl p-4 ${dark?'bg-white/[0.03] border border-white/8':'bg-lavender-50/70 border border-lavender-200'}`}>
-              <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-lavender-100">{TRANSPORT_TYPES[t.type].icon} {from.name||'?'} <span className="text-lavender-400/60">→</span> {to.name||'?'}</div>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <Field label="Type"><Select value={t.type} onChange={e=>updSeg(from.id,to.id,{type:e.target.value})}>{Object.entries(TRANSPORT_TYPES).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}</Select></Field>
-                <Field label="Date">{<><Input type="date" value={t.date} onChange={e=>updSeg(from.id,to.id,{date:e.target.value})}/>{!t.date&&sug&&<button type="button" onClick={()=>updSeg(from.id,to.id,{date:sug})} className="mt-1 text-[11px] iridescent-text font-semibold hover:opacity-80">📅 Use {prettyDate(sug)}</button>}</>}</Field>
-                <Field label="Time" hint="optional"><Input type="time" value={t.time||''} onChange={e=>updSeg(from.id,to.id,{time:e.target.value})}/></Field>
-                <Field label="Provider" hint="airline, operator"><Input value={t.provider} placeholder="e.g. Riyadh Air" onChange={e=>updSeg(from.id,to.id,{provider:e.target.value})}/></Field>
-                <Field label={`Cost (${cur})`} hint="per person"><Input className="no-spin" type="number" min="0" value={t.cost} placeholder="0" onChange={e=>updSeg(from.id,to.id,{cost:e.target.value})}/></Field>
-                <Field label="Persons" hint="× cost"><Input className="no-spin" type="number" min="1" value={t.persons||''} placeholder={String(trip.persons||1)} onChange={e=>updSeg(from.id,to.id,{persons:e.target.value})}/></Field>
-                <Field label="Booking ref" hint="optional"><Input value={t.ref} placeholder="ABC123" onChange={e=>updSeg(from.id,to.id,{ref:e.target.value})}/></Field>
-                <Field label="Notes" hint="optional"><Input value={t.notes} placeholder="Seat, terminal…" onChange={e=>updSeg(from.id,to.id,{notes:e.target.value})}/></Field>
-              </div>
-              <AttachmentStrip attachments={t.attachments} onChange={a=>updSeg(from.id,to.id,{attachments:a})}/>
+      <Collapse step="3" kicker="How you move" title="Transport per city" defaultOpen={false} right={<span className="text-sm iridescent-text font-display">{fmt(c.transportTotal,cur)}</span>}>
+        <div className="text-[11px] text-lavender-300/50 mb-3">Add as many as you like per city — flight in, car rental, taxis, trains, private driver…</div>
+        {named.length===0? <Empty text="Name your cities first, then add transport for each."/> :
+        <div className="space-y-5">
+          {named.map(nd=>{ const items=(trip.transports||[]).filter(x=>x.cityId===nd.id); const ctot=items.reduce((s,x)=>s+transportBase(x,trip),0);
+            return (<div key={nd.id} className={`rounded-xl p-4 ${cardBg}`}>
+              <div className="flex items-center justify-between mb-3"><div className="font-display text-lg text-lavender-100">{cityFlag(nd.name)} {nd.name}</div>
+                <div className="flex items-center gap-3"><span className="text-sm iridescent-text font-display">{fmt(ctot,cur)}</span><Btn variant="soft" onClick={()=>addTr(nd.id)}>＋ Transport</Btn></div></div>
+              {items.length===0? <div className="text-xs text-lavender-300/50">No transport added for {nd.name} yet.</div> :
+              <div className="space-y-3">{items.map((tr,ix)=>(<div key={tr.id} className={itemBg}>
+                <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-lavender-100">{(TRANSPORT_TYPES[tr.type]||{icon:'🧭'}).icon} {(TRANSPORT_TYPES[tr.type]||{label:'Transport'}).label}<span className="text-[11px] font-normal text-lavender-300/50 ml-auto">#{ix+1}</span></div>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <Field label="Type"><Select value={tr.type} onChange={e=>updTr(tr.id,{type:e.target.value})}>{Object.entries(TRANSPORT_TYPES).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}</Select></Field>
+                  <Field label="Provider / company"><Input value={tr.provider} placeholder="e.g. Emirates, Hertz" onChange={e=>updTr(tr.id,{provider:e.target.value})}/></Field>
+                  <Field label="From"><Input value={tr.from} placeholder="From" onChange={e=>updTr(tr.id,{from:e.target.value})}/></Field>
+                  <Field label="To"><Input value={tr.to} placeholder="To" onChange={e=>updTr(tr.id,{to:e.target.value})}/></Field>
+                  <Field label="Start date"><Input type="date" value={tr.startDate} onChange={e=>updTr(tr.id,{startDate:e.target.value})}/></Field>
+                  <Field label="Start time" hint="opt"><Input type="time" value={tr.startTime} onChange={e=>updTr(tr.id,{startTime:e.target.value})}/></Field>
+                  <Field label="End date" hint="opt"><Input type="date" value={tr.endDate} onChange={e=>updTr(tr.id,{endDate:e.target.value})}/></Field>
+                  <Field label="End time" hint="opt"><Input type="time" value={tr.endTime} onChange={e=>updTr(tr.id,{endTime:e.target.value})}/></Field>
+                  <Field label="Price (total)"><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={tr.cost} placeholder="0" onChange={e=>updTr(tr.id,{cost:e.target.value})}/><CurSel value={tr.currency} onChange={v=>updTr(tr.id,{currency:v})}/></div></Field>
+                  <Field label="Passengers"><Input className="no-spin" type="number" min="1" value={tr.persons||''} placeholder={String(trip.persons||1)} onChange={e=>updTr(tr.id,{persons:e.target.value})}/></Field>
+                  <Field label="Booking ref" hint="opt"><Input value={tr.ref} placeholder="ABC123" onChange={e=>updTr(tr.id,{ref:e.target.value})}/></Field>
+                  <Field label="Notes" hint="opt"><Input value={tr.notes} placeholder="Seat, terminal…" onChange={e=>updTr(tr.id,{notes:e.target.value})}/></Field>
+                </div>
+                <AttachmentStrip attachments={tr.attachments} onChange={a=>updTr(tr.id,{attachments:a})}/>
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/8">
+                  <div className="flex items-center gap-1"><button onClick={()=>moveTr(tr.id,-1)} className="text-lavender-300/60 hover:text-lavender-100 px-1.5">↑</button><button onClick={()=>moveTr(tr.id,1)} className="text-lavender-300/60 hover:text-lavender-100 px-1.5">↓</button></div>
+                  <div className="flex items-center gap-4"><span className="font-display text-base iridescent-text">{fmt(transportBase(tr,trip),cur)}</span><button onClick={()=>rmTr(tr.id)} className="text-peach-400 hover:text-peach-300">✕</button></div>
+                </div>
+              </div>))}</div>}
             </div>); })}
         </div>}
-        {c.transportTotal>0&&<TotalBar label="Total transportation" value={fmt(c.transportTotal,cur)}/>}
       </Collapse>
 
-      <Collapse step="4" kicker="Accommodation" title="Hotels per city" right={<span className="text-sm iridescent-text font-display">{fmt(c.accommodationTotal,cur)}</span>}>
-        {nodes.filter(n=>n.name).length===0? <Empty text="Name your cities first, then attach hotels."/> :
+      <Collapse step="4" kicker="Accommodation" title="Hotels per city" defaultOpen={false} right={<span className="text-sm iridescent-text font-display">{fmt(c.accommodationTotal,cur)}</span>}>
+        {named.length===0? <Empty text="Name your cities first, then attach hotels."/> :
         <div className="space-y-5">
-          {nodes.filter(n=>n.name).map((nd,i)=>{ const hs=trip.hotels.filter(h=>h.cityId===nd.id); const cityTotal=hs.reduce((s,h)=>s+hotelCost(h),0);
-            return (<div key={nd.id} className={`rounded-xl p-4 ${dark?'bg-white/[0.025] border border-white/8':'bg-lavender-50/50 border border-lavender-200'}`}>
+          {named.map(nd=>{ const hs=(trip.hotels||[]).filter(h=>h.cityId===nd.id); const cityTotal=hs.reduce((s,h)=>s+hotelBase(h,trip),0);
+            return (<div key={nd.id} className={`rounded-xl p-4 ${cardBg}`}>
               <div className="flex items-center justify-between mb-3"><div className="font-display text-lg text-lavender-100">{cityFlag(nd.name)} {nd.name}</div>
                 <div className="flex items-center gap-3"><span className="text-sm iridescent-text font-display">{fmt(cityTotal,cur)}</span><Btn variant="soft" onClick={()=>addH(nd.id)}>＋ Hotel</Btn></div></div>
               {hs.length===0? <div className="text-xs text-lavender-300/50">No hotel for {nd.name} yet.</div> :
-              <div className="space-y-3">{hs.map(h=>{ const n=daysBetween(h.checkIn,h.checkOut); const rooms=Math.max(1,num(h.rooms)||1); const sub=hotelCost(h);
-                return (<div key={h.id} className={`rounded-lg p-3 ${dark?'bg-white/[0.03]':'bg-white'} border border-white/8`}>
+              <div className="space-y-3">{hs.map(h=>{ const n=daysBetween(h.checkIn,h.checkOut); const rooms=Math.max(1,num(h.rooms)||1);
+                return (<div key={h.id} className={itemBg}>
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     <Field label="Hotel name"><Input value={h.name} placeholder="The Savoy" onChange={e=>updH(h.id,{name:e.target.value})}/></Field>
-                    <Field label="Google Maps link / address" hint="required"><Input value={h.mapLink} placeholder="Paste Maps link or address" onChange={e=>updH(h.id,{mapLink:e.target.value})}/></Field>
-                    <Field label={`Cost / night (${cur})`}><Input className="no-spin" type="number" min="0" value={h.perNight} placeholder="0" onChange={e=>updH(h.id,{perNight:e.target.value})}/></Field>
+                    <Field label="Google Maps link / address"><Input value={h.mapLink} placeholder="Paste Maps link or address" onChange={e=>updH(h.id,{mapLink:e.target.value})}/></Field>
+                    <Field label="Cost / night"><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={h.perNight} placeholder="0" onChange={e=>updH(h.id,{perNight:e.target.value})}/><CurSel value={h.currency} onChange={v=>updH(h.id,{currency:v})}/></div></Field>
                     <Field label="Check-in"><Input type="date" value={h.checkIn} onChange={e=>updH(h.id,{checkIn:e.target.value})}/></Field>
                     <Field label="Check-out" error={h.checkIn&&h.checkOut&&n<0?'Before check-in':null}><Input type="date" value={h.checkOut} onChange={e=>updH(h.id,{checkOut:e.target.value})}/></Field>
-                    <div className="grid grid-cols-2 gap-3"><Field label="Rooms"><Input className="no-spin" type="number" min="1" value={h.rooms} placeholder="1" onChange={e=>updH(h.id,{rooms:e.target.value})}/></Field>
-                    <Field label={`Taxes (${cur})`} hint="opt"><Input className="no-spin" type="number" min="0" value={h.taxes} placeholder="0" onChange={e=>updH(h.id,{taxes:e.target.value})}/></Field></div>
+                    <div className="grid grid-cols-3 gap-2"><Field label="Rooms"><Input className="no-spin" type="number" min="1" value={h.rooms} placeholder="1" onChange={e=>updH(h.id,{rooms:e.target.value})}/></Field>
+                    <Field label="Guests"><Input className="no-spin" type="number" min="1" value={h.persons||''} placeholder={String(trip.persons||1)} onChange={e=>updH(h.id,{persons:e.target.value})}/></Field>
+                    <Field label="Taxes" hint="opt"><Input className="no-spin" type="number" min="0" value={h.taxes} placeholder="0" onChange={e=>updH(h.id,{taxes:e.target.value})}/></Field></div>
                   </div>
                   <HotelMiniMap link={h.mapLink}/>
                   <AttachmentStrip attachments={h.attachments} onChange={a=>updH(h.id,{attachments:a})}/>
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/8"><span className="text-xs text-lavender-300/80">{n>0?n:0} nights × {fmt(num(h.perNight),cur)}{rooms>1?` × ${rooms}`:''}</span>
-                    <div className="flex items-center gap-4"><span className="font-display text-base iridescent-text">{fmt(sub,cur)}</span><button onClick={()=>rmH(h.id)} className="text-peach-400 hover:text-peach-300">✕</button></div></div>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/8"><span className="text-xs text-lavender-300/80">{n>0?n:0} nights × {fmt(num(h.perNight),itemCur(h,trip))}{rooms>1?` × ${rooms}`:''}</span>
+                    <div className="flex items-center gap-4"><span className="font-display text-base iridescent-text">{fmt(hotelBase(h,trip),cur)}</span><button onClick={()=>rmH(h.id)} className="text-peach-400 hover:text-peach-300">✕</button></div></div>
                 </div>); })}</div>}
             </div>); })}
         </div>}
       </Collapse>
 
-      <Collapse step="5" kicker="City budgets" title="Spend per city" defaultOpen={false} right={<span className="text-sm iridescent-text font-display">{fmt(c.cityBudgetTotal,cur)}</span>}>
-        {nodes.filter(n=>n.name).length===0? <Empty text="Name cities to set per-city budgets."/> :
-        <div className="grid md:grid-cols-2 gap-4">{nodes.filter(n=>n.name).map(nd=>{ const b=trip.cityBudgets[nd.id]||{}; const tot=BCATS.reduce((s,[k])=>s+num(b[k]),0);
-          return (<div key={nd.id} className={`rounded-xl p-4 ${dark?'bg-white/[0.025] border border-white/8':'bg-lavender-50/50 border border-lavender-200'}`}>
-            <div className="flex items-center justify-between mb-3"><div className="font-display text-lg text-lavender-100">{cityFlag(nd.name)} {nd.name}</div><div className="flex items-center gap-3"><span className="iridescent-text font-display">{fmt(tot*pax(nd.persons,trip),cur)}</span>{!nd.anchor&&<button onClick={()=>removeNode(nd.id)} title="Remove city" className="text-peach-400 hover:text-peach-300 text-sm">✕</button>}</div></div>
-            <div className="flex items-center gap-2 mb-2.5 text-[11px] text-lavender-300/70"><span className="uppercase tracking-wide font-semibold">Persons</span><Input className="no-spin w-16 py-1.5" type="number" min="1" value={nd.persons||''} placeholder={String(trip.persons||1)} onChange={e=>setNode(nd.id,{persons:e.target.value})}/><span>× this city's daily budgets</span></div>
-                <div className="grid grid-cols-2 gap-2.5">{BCATS.map(([k,lbl])=>(<Field key={k} label={lbl}><Input className="no-spin" type="number" min="0" value={b[k]||''} placeholder="0" onChange={e=>updCB(nd.id,k,e.target.value)}/></Field>))}</div>
-          </div>); })}</div>}
+      <Collapse step="5" kicker="Spend per city" title="Activities & spending" defaultOpen={false} right={<span className="text-sm iridescent-text font-display">{fmt(c.spendTotal,cur)}</span>}>
+        <div className="text-[11px] text-lavender-300/50 mb-3">Add detailed items per city — theme parks, museums, restaurants, tours, shopping… create your own categories too.</div>
+        <datalist id="spend-cats">{SPEND_CATS.map(x=><option key={x} value={x}/>)}</datalist>
+        {named.length===0? <Empty text="Name your cities first, then add spending & activities."/> :
+        <div className="space-y-5">
+          {named.map(nd=>{ const items=(trip.spend||[]).filter(x=>x.cityId===nd.id); const ctot=items.reduce((s,x)=>s+spendBase(x,trip),0);
+            return (<div key={nd.id} className={`rounded-xl p-4 ${cardBg}`}>
+              <div className="flex items-center justify-between mb-3"><div className="font-display text-lg text-lavender-100">{cityFlag(nd.name)} {nd.name}</div>
+                <div className="flex items-center gap-3"><span className="text-sm iridescent-text font-display">{fmt(ctot,cur)}</span><Btn variant="soft" onClick={()=>addSp(nd.id)}>＋ Item</Btn></div></div>
+              {items.length===0? <div className="text-xs text-lavender-300/50">No activities or spending for {nd.name} yet.</div> :
+              <div className="space-y-3">{items.map(s=>(<div key={s.id} className={itemBg}>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <Field label="Name"><Input value={s.name} placeholder="e.g. Burj Khalifa" onChange={e=>updSp(s.id,{name:e.target.value})}/></Field>
+                  <Field label="Category" hint="custom ok"><Input list="spend-cats" value={s.category} placeholder="Activity" onChange={e=>updSp(s.id,{category:e.target.value})}/></Field>
+                  <Field label="Date"><Input type="date" min={dwin(nd.id).arrive||undefined} max={dwin(nd.id).depart||undefined} value={s.date} onChange={e=>updSp(s.id,{date:e.target.value})}/></Field>
+                  <Field label="Time" hint="opt"><Input type="time" value={s.time} onChange={e=>updSp(s.id,{time:e.target.value})}/></Field>
+                  <Field label="Persons"><Input className="no-spin" type="number" min="1" value={s.persons||''} placeholder={String(trip.persons||1)} onChange={e=>updSp(s.id,{persons:e.target.value})}/></Field>
+                  <Field label="Price / person"><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={s.perPerson} placeholder="0" onChange={e=>updSp(s.id,{perPerson:e.target.value})}/><CurSel value={s.currency} onChange={v=>updSp(s.id,{currency:v})}/></div></Field>
+                  <Field label="Location" hint="opt"><Input value={s.location} placeholder="Address / area" onChange={e=>updSp(s.id,{location:e.target.value})}/></Field>
+                  <Field label="Booking ref" hint="opt"><Input value={s.ref} placeholder="Ref" onChange={e=>updSp(s.id,{ref:e.target.value})}/></Field>
+                  <Field label="Notes / description" hint="opt"><Input value={s.desc} placeholder="Details…" onChange={e=>updSp(s.id,{desc:e.target.value})}/></Field>
+                </div>
+                <AttachmentStrip attachments={s.attachments} onChange={a=>updSp(s.id,{attachments:a})}/>
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/8"><span className="text-xs text-lavender-300/80">{Math.max(1,Math.round(num(s.persons))||1)} × {fmt(num(s.perPerson),itemCur(s,trip))}</span>
+                  <div className="flex items-center gap-4"><span className="font-display text-base iridescent-text">{fmt(spendBase(s,trip),cur)}</span><button onClick={()=>rmSp(s.id)} className="text-peach-400 hover:text-peach-300">✕</button></div></div>
+              </div>))}</div>}
+            </div>); })}
+        </div>}
       </Collapse>
 
       <Collapse step="6" kicker="Global expenses" title="Outside the cities" defaultOpen={false} right={<span className="text-sm iridescent-text font-display">{fmt(c.miscTotal,cur)}</span>}>
@@ -664,17 +717,18 @@ function HeatMap({cityInfo,cur}){ const data=cityInfo.filter(ci=>ci.total>0); if
     </div>); })}</div>); }
 function Insight({label,value}){ return (<div className="flex justify-between items-center py-2 border-b border-white/8 last:border-0"><span className="text-xs text-lavender-300/70">{label}</span><span className="text-sm font-semibold text-lavender-100 text-right">{value}</span></div>); }
 
-function buildTimeline(trip,cur){ const nodes=trip.nodes||[]; const nm=id=>{const n=nodes.find(x=>x.id===id);return n?(n.name||'?'):'?';};
-  const hotelsOf=id=>trip.hotels.filter(h=>h.cityId===id).sort((a,b)=>(a.checkIn||'').localeCompare(b.checkIn||''));
+function buildTimeline(trip,cur){ const nodes=trip.nodes||[];
   const ev=[]; let seq=0; const push=(o)=>ev.push({seq:seq++,...o});
   push({date:trip.departDate,icon:'🛫',title:trip.name||'Trip begins',sub:'Departure'+(nodes[0]&&nodes[0].name?' · '+nodes[0].name:''),tag:'Start'});
-  const addHotels=(id)=>hotelsOf(id).forEach(h=>{ const n=daysBetween(h.checkIn,h.checkOut); if(h.checkIn) push({date:h.checkIn,icon:'🏨',title:`Check in · ${h.name||'Hotel'}`,sub:`${n>0?n:0} nights · ${fmt(hotelCost(h),cur)}`,tag:'Stay'}); if(h.checkOut) push({date:h.checkOut,icon:'🧳',title:`Check out · ${h.name||'Hotel'}`,sub:'',tag:'Stay'}); });
-  if(nodes[0]) addHotels(nodes[0].id);
-  for(let i=0;i<nodes.length-1;i++){ const leg=trip.transports.find(x=>x.fromId===nodes[i].id&&x.toId===nodes[i+1].id);
-    if(leg){ const tm=leg.time?' · '+leg.time:''; push({date:leg.date,icon:TRANSPORT_TYPES[leg.type].icon,title:`${nm(leg.fromId)} → ${nm(leg.toId)}`,sub:`${TRANSPORT_TYPES[leg.type].label}${leg.provider?' · '+leg.provider:''}${tm} · ${fmt(num(leg.cost),cur)}`,tag:'Travel'}); }
-    if(nodes[i+1]) addHotels(nodes[i+1].id); }
+  const trOf=id=>(trip.transports||[]).filter(t=>t.cityId===id).sort((a,b)=>((a.startDate||'')+(a.startTime||'')).localeCompare((b.startDate||'')+(b.startTime||'')));
+  const hOf=id=>(trip.hotels||[]).filter(h=>h.cityId===id).sort((a,b)=>(a.checkIn||'').localeCompare(b.checkIn||''));
+  const spOf=id=>(trip.spend||[]).filter(s=>s.cityId===id&&s.date).sort((a,b)=>((a.date||'')+(a.time||'')).localeCompare((b.date||'')+(b.time||'')));
+  nodes.forEach(n=>{ trOf(n.id).forEach(t=>{ const tm=t.startTime?' · '+t.startTime:''; const rt=(t.from&&t.to)?(t.from+' → '+t.to):(n.name||''); push({date:t.startDate,icon:(TRANSPORT_TYPES[t.type]||{icon:'🧭'}).icon,title:(TRANSPORT_TYPES[t.type]||{label:'Transport'}).label+(rt?' · '+rt:''),sub:(t.provider?t.provider+' · ':'')+(n.name||'')+tm+(num(t.cost)?' · '+fmt(transportBase(t,trip),cur):''),tag:'Travel'}); });
+    hOf(n.id).forEach(h=>{ const nn=daysBetween(h.checkIn,h.checkOut); if(h.checkIn) push({date:h.checkIn,icon:'🏨',title:'Check in · '+(h.name||'Hotel'),sub:(n.name||'')+' · '+(nn>0?nn:0)+' nights · '+fmt(hotelBase(h,trip),cur),tag:'Stay'}); if(h.checkOut) push({date:h.checkOut,icon:'🧳',title:'Check out · '+(h.name||'Hotel'),sub:n.name||'',tag:'Stay'}); });
+    spOf(n.id).forEach(s=>{ push({date:s.date,icon:'🎟️',title:(s.name||'Activity'),sub:(s.category||'')+(s.time?' · '+s.time:'')+(spendNative(s)?' · '+fmt(spendBase(s,trip),cur):''),tag:'Plan'}); }); });
   push({date:trip.returnDate,icon:'🛬',title:'Trip ends',sub:'Return'+(nodes.length&&nodes[nodes.length-1].name?' · '+nodes[nodes.length-1].name:''),tag:'End'});
   return ev; }
+
 function TimelineList({trip,cur,compact}){ const {dark}=useContext(Theme); const ev=buildTimeline(trip,cur);
   if(ev.length===0) return <Empty text="Your timeline appears as you add dates."/>;
   return (<div className="relative pl-6"><div className="tl-line absolute left-[7px] top-2 bottom-2 w-px bg-gradient-to-b from-lavender-400/60 via-lavender-400/30 to-peach-400/50"></div>
@@ -689,7 +743,7 @@ function BudgetView({trip,cur}){ const {dark}=useContext(Theme); const c=useComp
   const topCat=[...c.categoryBreakdown].sort((a,b)=>b.value-a.value)[0];
   const forecast=useMemo(()=>{ if(c.days<=0)return {labels:[],values:[]}; const start=trip.departDate; const arr=new Array(c.days).fill(0);
     c.cityInfo.forEach(ci=>{ const s=ci.arrive||start; const idx=Math.max(0,daysBetween(start,s)); const span=Math.max(1,ci.nights||1); const per=ci.total/span; for(let k=0;k<span&&idx+k<c.days;k++){arr[idx+k]+=per;} });
-    trip.transports.forEach(t=>{ if(t.date){const idx=daysBetween(start,t.date); if(idx>=0&&idx<c.days)arr[idx]+=num(t.cost)*pax(t.persons,trip);} });
+    (trip.transports||[]).forEach(t=>{ if(t.startDate){const idx=daysBetween(start,t.startDate); if(idx>=0&&idx<c.days)arr[idx]+=transportBase(t,trip);} });
     return {labels:arr.map((_,i)=>prettyDate(addDays(start,i))),values:arr.map(v=>Math.round(v))}; },[JSON.stringify(trip)]);
   if(c.grand===0&&tripNodes(trip).filter(n=>n.name).length===0) return <Empty text="Build a trip first — budget analytics will populate here."/>;
   return (<div className="space-y-6">
@@ -755,17 +809,16 @@ function logoForPDF(){ return new Promise(res=>{ try{
   }catch(e){ res(null); } }); }
 async function exportTripPDF(trip,cur){
   let jsPDF; try{ jsPDF=await loadJsPDF(); }catch(e){ alert('Could not load the PDF library (needs an internet connection). Please try again online.'); return; }
-  const png=await logoForPDF(); const nm=id=>{const n=(trip.nodes||[]).find(x=>x.id===id);return n?(n.name||'?'):'?';};
-  const doc=new jsPDF({unit:'pt',format:'a4'}); const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight(), M=40; let y=0;
-  const P=v=>fmt(v,cur);
+  trip=migrateTrip(trip); const png=await logoForPDF();
+  const doc=new jsPDF({unit:'pt',format:'a4'}); const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight(), M=40; let y=0; const P=v=>fmt(v,cur);
   const named=tripNodes(trip).filter(n=>n.name);
-  const persons=Math.max(1,Math.round(num(trip.persons))||1); const accom=trip.hotels.reduce((s,h)=>s+hotelCost(h),0); const trans=trip.transports.reduce((s,t)=>s+num(t.cost)*pax(t.persons,trip),0);
-  const cb=(trip.nodes||[]).reduce((s,n)=>{const b=trip.cityBudgets[n.id]||{};const base=BKEYS.reduce((x,k)=>x+num(b[k]),0);return s+base*pax(n.persons,trip);},0);
-  const misc=Object.values(trip.tripExpenses).reduce((s,e)=>s+num(e.amount)*pax(e.persons,trip),0); const grand=accom+trans+cb+misc;
-  const days=daysBetween(trip.departDate,trip.returnDate); const route=routeNodes(trip);
-  doc.setFillColor(21,16,58); doc.rect(0,0,W,92,'F');
-  if(png) doc.addImage(png,'PNG',M,23,46,46);
-  const tx=M+(png?60:0);
+  const persons=Math.max(1,Math.round(num(trip.persons))||1);
+  const accom=(trip.hotels||[]).reduce((s,h)=>s+hotelBase(h,trip),0);
+  const trans=(trip.transports||[]).reduce((s,t)=>s+transportBase(t,trip),0);
+  const sp=(trip.spend||[]).reduce((s,x)=>s+spendBase(x,trip),0);
+  const misc=Object.values(trip.tripExpenses||{}).reduce((s,e)=>s+num(e.amount)*pax(e.persons,trip),0); const grand=accom+trans+sp+misc;
+  const days=daysBetween(trip.departDate,trip.returnDate); const route=routeNodes(trip); const nmOf=id=>{const n=(trip.nodes||[]).find(x=>x.id===id);return n?(n.name||'—'):'—';};
+  doc.setFillColor(21,16,58); doc.rect(0,0,W,92,'F'); if(png) doc.addImage(png,'PNG',M,23,46,46); const tx=M+(png?60:0);
   doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.text('Travel Planner',tx,42);
   doc.setFontSize(12); doc.setTextColor(243,185,142); doc.text((trip.name||'Untitled trip'),tx,62);
   doc.setFontSize(9); doc.setTextColor(200,190,230); doc.text('Itinerary & budget report · '+new Date().toLocaleDateString(),tx,78);
@@ -776,21 +829,21 @@ async function exportTripPDF(trip,cur){
   line('Duration', (days>0?days:0)+' days · '+(days>0?days:0)+' nights');
   line('Status', (trip.status||'draft')); line('Default travellers', String(persons)); line('Base currency', cur); y+=6;
   doc.setFillColor(245,241,251); doc.roundedRect(M,y,W-2*M,48,8,8,'F');
-  const kpis=[['Total',P(grand)],['Cities',String(named.length)],['Hotels',String(trip.hotels.length)],['Transport',P(trans)],['Accom.',P(accom)]];
-  const cw=(W-2*M)/kpis.length;
-  kpis.forEach((k,i)=>{ const cx=M+cw*i+cw/2; doc.setFont('helvetica','normal'); doc.setTextColor(140,120,180); doc.setFontSize(8.5); doc.text(k[0],cx,y+18,{align:'center'}); doc.setFont('helvetica','bold'); doc.setTextColor(40,29,68); doc.setFontSize(12); doc.text(k[1],cx,y+37,{align:'center'}); });
-  y+=68;
+  const kpis=[['Total',P(grand)],['Cities',String(named.length)],['Transport',P(trans)],['Stays',P(accom)],['Activities',P(sp)]];
+  const cw=(W-2*M)/kpis.length; kpis.forEach((k,i)=>{ const cx=M+cw*i+cw/2; doc.setFont('helvetica','normal'); doc.setTextColor(140,120,180); doc.setFontSize(8.5); doc.text(k[0],cx,y+18,{align:'center'}); doc.setFont('helvetica','bold'); doc.setTextColor(40,29,68); doc.setFontSize(12); doc.text(k[1],cx,y+37,{align:'center'}); }); y+=68;
   const ensure=h=>{ if(y+h>H-46){ doc.addPage(); y=50; } };
   const sect=t=>{ ensure(34); doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(40,29,68); doc.text(t,M,y); y+=8; doc.setDrawColor(200,190,230); doc.line(M,y,W-M,y); y+=15; };
   const table=(hd,rows,wd)=>{ doc.setFontSize(8.5); ensure(22); doc.setFont('helvetica','bold'); doc.setTextColor(120,80,180); let x=M; hd.forEach((h,i)=>{ doc.text(h,x,y); x+=wd[i]; }); y+=12; doc.setDrawColor(230,224,245); doc.line(M,y-4,W-M,y-4); doc.setFont('helvetica','normal'); doc.setTextColor(40,29,68);
     rows.forEach(r=>{ ensure(16); let x2=M; r.forEach((cell,i)=>{ doc.text(doc.splitTextToSize(String(cell),wd[i]-6)[0]||'',x2,y); x2+=wd[i]; }); y+=15; }); y+=12; };
-  if(named.length){ sect('Cities'); table(['City','Nights','Hotel','Accom.','Budget','Total'],
-    named.map(nd=>{ const hs=trip.hotels.filter(h=>h.cityId===nd.id); const n=hs.reduce((s,h)=>{const d=daysBetween(h.checkIn,h.checkOut);return s+(d>0?d:0);},0); const ac=hs.reduce((s,h)=>s+hotelCost(h),0); const b=trip.cityBudgets[nd.id]||{}; const bud=BKEYS.reduce((x,k)=>x+num(b[k]),0)*pax(nd.persons,trip); return [nd.name,String(n),hs[0]?(hs[0].name||'—'):'—',P(ac),P(bud),P(ac+bud)]; }),[95,42,118,73,73,73]); }
-  if(trip.transports.length){ sect('Transportation'); table(['Route','Type','Provider','Date','Time','Pax','Cost'],
-    trip.transports.map(t=>[`${nm(t.fromId)} > ${nm(t.toId)}`,TRANSPORT_TYPES[t.type].label,t.provider||'—',prettyDate(t.date),(t.time||'—'),String(pax(t.persons,trip)),P(num(t.cost)*pax(t.persons,trip))]),[128,54,94,58,44,30,72]); }
-  if(trip.hotels.length){ sect('Accommodation'); table(['Hotel','City','Stay','Nights','Cost'],
-    trip.hotels.map(h=>{ const nd=(trip.nodes||[]).find(x=>x.id===h.cityId); const n=daysBetween(h.checkIn,h.checkOut); return [h.name||'—',(nd&&nd.name)||'—',prettyDate(h.checkIn)+'–'+prettyDate(h.checkOut),String(n>0?n:0),P(hotelCost(h))]; }),[140,90,112,50,80]); }
-  const teRows=Object.entries(trip.tripExpenses).filter(([k,e])=>num(e.amount)>0).map(([k,e])=>[k.charAt(0).toUpperCase()+k.slice(1),P(num(e.amount))]);
+  if(named.length){ sect('Cities'); table(['City','Nights','Hotel','Stays','Transport','Activities','Total'],
+    named.map(nd=>{ const hs=(trip.hotels||[]).filter(h=>h.cityId===nd.id); const n=hs.reduce((s,h)=>{const d=daysBetween(h.checkIn,h.checkOut);return s+(d>0?d:0);},0); const ac=hs.reduce((s,h)=>s+hotelBase(h,trip),0); const tr=(trip.transports||[]).filter(t=>t.cityId===nd.id).reduce((s,t)=>s+transportBase(t,trip),0); const spc=(trip.spend||[]).filter(s=>s.cityId===nd.id).reduce((s,x)=>s+spendBase(x,trip),0); return [nd.name,String(n),hs[0]?(hs[0].name||'—'):'—',P(ac),P(tr),P(spc),P(ac+tr+spc)]; }),[86,38,96,60,66,66,62]); }
+  if((trip.transports||[]).length){ sect('Transportation'); table(['City','Type','Provider','Route','Date','Pax','Cost'],
+    (trip.transports||[]).map(t=>[nmOf(t.cityId),(TRANSPORT_TYPES[t.type]||{label:t.type}).label,t.provider||'—',((t.from||'?')+' > '+(t.to||'?')),prettyDate(t.startDate),String(pax(t.persons,trip)),P(transportBase(t,trip))]),[80,56,80,108,58,30,62]); }
+  if((trip.hotels||[]).length){ sect('Accommodation'); table(['Hotel','City','Stay','Nights','Cost'],
+    (trip.hotels||[]).map(h=>{ const nd=(trip.nodes||[]).find(x=>x.id===h.cityId); const n=daysBetween(h.checkIn,h.checkOut); return [h.name||'—',(nd&&nd.name)||'—',prettyDate(h.checkIn)+'–'+prettyDate(h.checkOut),String(n>0?n:0),P(hotelBase(h,trip))]; }),[140,90,112,50,80]); }
+  if((trip.spend||[]).length){ sect('Activities & spending'); table(['Item','City','Category','Date','Pax','Cost'],
+    (trip.spend||[]).map(s=>[s.name||'—',nmOf(s.cityId),s.category||'—',prettyDate(s.date),String(Math.max(1,Math.round(num(s.persons))||1)),P(spendBase(s,trip))]),[120,84,90,58,30,72]); }
+  const teRows=Object.entries(trip.tripExpenses||{}).filter(([k,e])=>num(e.amount)>0).map(([k,e])=>[k.charAt(0).toUpperCase()+k.slice(1),P(num(e.amount)*pax(e.persons,trip))]);
   if(teRows.length){ sect('Global expenses'); table(['Item','Cost'],teRows,[220,120]); }
   ensure(58); doc.setFillColor(21,16,58); doc.roundedRect(M,y,W-2*M,42,8,8,'F'); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('GRAND TOTAL',M+16,y+26); doc.setTextColor(243,185,142); doc.setFontSize(15); doc.text(P(grand),W-M-16,y+27,{align:'right'});
   doc.setFontSize(8); doc.setTextColor(150,140,180); doc.text('Generated by Travel Planner · stored locally on your device · not affiliated with any airline',M,H-22);
@@ -798,9 +851,10 @@ async function exportTripPDF(trip,cur){
 }
 
 /* ============================ TRIPS / HISTORY ============================ */
-function tripTotals(trip){ const accommodation=trip.hotels.reduce((s,h)=>s+hotelCost(h),0); const transport=trip.transports.reduce((s,t)=>s+num(t.cost)*pax(t.persons,trip),0);
-  const nodes=tripNodes(trip); const cb=nodes.reduce((s,n)=>{const b=trip.cityBudgets[n.id]||{};const base=BKEYS.reduce((x,k)=>x+num(b[k]),0);return s+base*pax(n.persons,trip);},0); const misc=Object.values(trip.tripExpenses).reduce((s,e)=>s+num(e.amount)*pax(e.persons,trip),0);
-  return {grand:accommodation+transport+cb+misc,days:daysBetween(trip.departDate,trip.returnDate),cities:tripNodes(trip).filter(n=>n.name).length}; }
+function tripTotals(t0){ const trip=migrateTrip(t0);
+  const accommodation=(trip.hotels||[]).reduce((s,h)=>s+hotelBase(h,trip),0); const transport=(trip.transports||[]).reduce((s,t)=>s+transportBase(t,trip),0); const sp=(trip.spend||[]).reduce((s,x)=>s+spendBase(x,trip),0); const misc=Object.values(trip.tripExpenses||{}).reduce((s,e)=>s+num(e.amount)*pax(e.persons,trip),0);
+  return {grand:accommodation+transport+sp+misc,days:daysBetween(trip.departDate,trip.returnDate),cities:tripNodes(trip).filter(n=>n.name).length}; }
+
 function TripsView({trips,onNew,onEdit,onAction}){ const {dark}=useContext(Theme); const [sort,setSort]=useState('updated'); const [filter,setFilter]=useState('all');
   let list=Object.values(trips);
   if(filter!=='all') list=list.filter(t=>(t.status||'draft')===filter);
@@ -940,9 +994,10 @@ function SettingsView({dark,setDark,logo,setLogo,onResetAll,cloud}){
   </div>); }
 
 /* ============================ APP ============================ */
-function blankTrip(){ return { id:uid(), name:'', status:'draft', baseCurrency:'SAR', createdAt:Date.now(), updatedAt:Date.now(),
-  departDate:'', returnDate:'', persons:1, nodes:[{id:uid(),name:'',anchor:'start'},{id:uid(),name:'',anchor:'end'}], transports:[], hotels:[], cityBudgets:{},
+function blankTrip(){ return { id:uid(), name:'', status:'draft', baseCurrency:'SAR', __v5:true, createdAt:Date.now(), updatedAt:Date.now(),
+  departDate:'', returnDate:'', persons:1, nodes:[{id:uid(),name:'',anchor:'start'},{id:uid(),name:'',anchor:'end'}], transports:[], hotels:[], spend:[],
   tripExpenses:{visa:{amount:'',attachments:[]},insurance:{amount:'',attachments:[]},sim:{amount:'',attachments:[]},transfers:{amount:'',attachments:[]},luggage:{amount:'',attachments:[]},emergency:{amount:'',attachments:[]}} }; }
+
 
 function App(){
   const [dark,setDark]=usePersist('tp_dark',true);
