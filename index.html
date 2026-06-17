@@ -195,8 +195,8 @@ function migrateTrip(t){ if(t.__v5) return t; let nt={...t};
 const SPEND_CATS=['Theme park','Museum','Restaurant','Tour','Activity','Shopping','Event','Park','Tickets','Local transport','Hotel extra','Other'];
 function itemCur(it,trip){ return (it&&it.currency)||trip.baseCurrency||'SAR'; }
 function usageDays(t){ if(t&&t.startDate&&t.endDate){ const d=daysBetween(t.startDate,t.endDate); return d>0?d:1; } return 1; }
-function transportNative(t){ if(!t) return 0; const pm=t.priceMode||((t.type==='car'||t.type==='driver')?'perDay':'total'); if(pm==='perDay'){ if(num(t.cost)>0) return num(t.cost); return num(t.perDay)*usageDays(t); } return num(t.cost); }
-function transportBase(t,trip){ return convertAmount(transportNative(t),itemCur(t,trip),trip.baseCurrency||'SAR'); }
+function transportNative(t,trip){ if(!t) return 0; if(t.type==='car'){ return num(t.perDay)*usageDays(t); } return num(t.cost)*pax(t.persons,trip); }
+function transportBase(t,trip){ return convertAmount(transportNative(t,trip),itemCur(t,trip),trip.baseCurrency||'SAR'); }
 function spendNative(s){ return num(s.perPerson)*Math.max(1,Math.round(num(s.persons))||1); }
 function spendBase(s,trip){ return convertAmount(spendNative(s),itemCur(s,trip),trip.baseCurrency||'SAR'); }
 function hotelBase(h,trip){ return convertAmount(hotelCost(h),(h&&h.currency)||trip.baseCurrency||'SAR',trip.baseCurrency||'SAR'); }
@@ -537,6 +537,20 @@ function RangeField({start,end,onStart,onEnd,min,max,labels}){
 
 /* ============================ CITY AUTOCOMPLETE
 
+function fmtTime(hhmm){ if(!hhmm) return ''; const p=String(hhmm).split(':'); const h=+p[0], m=+(p[1]||0); if(isNaN(h)) return hhmm; const d=new Date(); d.setHours(h,m,0,0); try{ return new Intl.DateTimeFormat([],{hour:'numeric',minute:'2-digit'}).format(d); }catch(e){ return hhmm; } }
+function TimeField({value,onChange,placeholder}){
+  const {dark}=useContext(Theme); const [open,setOpen]=useState(false); const [pos,setPos]=useState(null); const btn=useRef(); const pop=useRef();
+  const place=()=>{ if(!btn.current)return; const r=btn.current.getBoundingClientRect(); const W=232,Hc=300; const left=Math.max(8,Math.min(r.left,window.innerWidth-W-8)); const fits=window.innerHeight-r.bottom>Hc+10; const top=fits?r.bottom+6:Math.max(8,r.top-Hc-2); setPos({left,top}); };
+  useEffect(()=>{ if(!open)return; place(); const f=()=>place(); window.addEventListener('scroll',f,true); window.addEventListener('resize',f); const h=e=>{ if((btn.current&&btn.current.contains(e.target))||(pop.current&&pop.current.contains(e.target)))return; setOpen(false); }; document.addEventListener('mousedown',h); return ()=>{ window.removeEventListener('scroll',f,true); window.removeEventListener('resize',f); document.removeEventListener('mousedown',h); }; },[open]);
+  const slots=useMemo(()=>{ const a=[]; for(let h=0;h<24;h++)for(let m=0;m<60;m+=30){ a.push((h<10?'0':'')+h+':'+(m<10?'0':'')+m); } return a; },[]);
+  return (<>
+    <button ref={btn} type="button" onClick={()=>setOpen(o=>!o)} className={`w-full rounded-xl px-3.5 py-2.5 text-sm text-left flex items-center justify-between gap-2 ${dark?'bg-white/5 border border-white/10 text-lavender-50':'bg-white border border-lavender-200 text-lavender-950'}`}><span className={value?'':'opacity-40'}>{value?fmtTime(value):(placeholder||'Select time')}</span><span className="opacity-50">🕐</span></button>
+    {open&&pos&&<div ref={pop} style={{position:'fixed',left:pos.left,top:pos.top,zIndex:80,width:232}} className={`rounded-2xl p-2 ${dark?'ac-menu-dark':'ac-menu-light'}`}>
+      <div className="max-h-[256px] overflow-auto hide-scrollbar grid grid-cols-2 gap-1">{slots.map(s=>(<button key={s} type="button" onClick={()=>{onChange(s);setOpen(false);}} className={`rounded-lg px-2 py-1.5 text-sm text-center transition ${value===s?'iridescent text-indigo2-950 font-semibold':(dark?'text-lavender-100 hover:bg-white/10':'text-lavender-900 hover:bg-lavender-100')}`}>{fmtTime(s)}</button>))}</div>
+      {value&&<div className="text-center mt-1.5 pt-1.5 border-t border-white/10"><button type="button" onClick={()=>{onChange('');setOpen(false);}} className="text-[11px] text-lavender-300/70 hover:text-peach-400">Clear time</button></div>}
+    </div>}
+  </>); }
+
 /* ============================ CITY AUTOCOMPLETE ============================ */
 function CityAutocomplete({value,onChange,placeholder,suggestNext}){
   const {dark}=useContext(Theme);
@@ -611,15 +625,19 @@ function PlanView({trip,setTrip,cur,onSave}){
             <Field label="Start point">{startNode&&<CityAutocomplete value={startNode.name} onChange={v=>setNode(startNode.id,{name:v})} placeholder="Jeddah"/>}</Field>
             <Field label="Final return">{endNode&&<CityAutocomplete value={endNode.name} onChange={v=>setNode(endNode.id,{name:v})} placeholder="Jeddah"/>}</Field>
           </div>
-          <Field label="Trip dates" error={c.days<0?'Return must be after departure':null}><RangeField start={trip.departDate} end={trip.returnDate} onStart={d=>setT({departDate:d})} onEnd={d=>setT({returnDate:d})} labels={['Departure','Return']}/></Field>
-          <Field label="Default travellers" hint="pre-fills items; set per item below"><div className="flex items-center gap-2"><button type="button" onClick={()=>setT({persons:Math.max(1,(Math.round(num(trip.persons))||1)-1)})} className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 text-lavender-100 text-lg leading-none shrink-0">−</button><Input className="no-spin text-center" type="number" min="1" value={trip.persons||1} onChange={e=>setT({persons:Math.max(1,Math.round(num(e.target.value))||1)})}/><button type="button" onClick={()=>setT({persons:(Math.round(num(trip.persons))||1)+1})} className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 text-lavender-100 text-lg leading-none shrink-0">＋</button></div></Field>
+          <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+            <Field label="Trip dates" error={c.days<0?'Return must be after departure':null}><RangeField start={trip.departDate} end={trip.returnDate} onStart={d=>setT({departDate:d})} onEnd={d=>setT({returnDate:d})} labels={['Departure','Return']}/></Field>
+            <Field label="Default travellers" hint="per-item default"><div className="flex items-center gap-2"><button type="button" onClick={()=>setT({persons:Math.max(1,(Math.round(num(trip.persons))||1)-1)})} className="w-11 h-[42px] rounded-xl bg-white/5 border border-white/10 text-lavender-100 text-lg leading-none shrink-0">−</button><Input className="no-spin text-center h-[42px]" type="number" min="1" value={trip.persons||1} onChange={e=>setT({persons:Math.max(1,Math.round(num(e.target.value))||1)})}/><button type="button" onClick={()=>setT({persons:(Math.round(num(trip.persons))||1)+1})} className="w-11 h-[42px] rounded-xl bg-white/5 border border-white/10 text-lavender-100 text-lg leading-none shrink-0">＋</button></div></Field>
+          </div>
         </div>
-        <div className="mt-5 pt-4 border-t border-lavender-400/25">
-          <div className="rounded-2xl p-4 bg-gradient-to-br from-lavender-500/12 to-peach-400/10 border border-lavender-400/30">
-            <div className="text-[11px] uppercase tracking-[0.2em] text-lavender-300/70 font-semibold mb-3 flex items-center gap-2">📋 Trip summary<span className="text-[9px] normal-case tracking-normal text-lavender-300/45 font-normal">· auto-calculated</span></div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {[['Total days',c.days>0?c.days:'—'],['Total nights',c.nights>0?c.nights:'—'],['Cities',named.length],['Grand total',fmt(c.grand,cur)]].map((row,i)=>(<div key={i}><div className="text-[10px] uppercase tracking-wide font-semibold text-lavender-300/60">{row[0]}</div><div className="font-display text-2xl iridescent-text leading-tight break-words">{row[1]}</div></div>))}
-            </div>
+        <div className="mt-5 pt-4 border-t border-lavender-400/20">
+          <div className="text-[11px] uppercase tracking-[0.2em] text-lavender-300/70 font-semibold mb-3 flex items-center gap-2">📋 Trip summary<span className="text-[9px] normal-case tracking-normal text-lavender-300/45 font-normal">· auto-calculated</span></div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {[['📅','Trip days',c.days>0?c.days:'—'],['📍','Cities / stops',named.length],['👥','Travellers',c.persons],['✈️','Transport',fmt(c.transportTotal,cur)],['🏨','Hotels',fmt(c.accommodationTotal,cur)],['🎟️','Est. spend',fmt(c.spendTotal,cur)],['🛫','Departs',trip.departDate?prettyDate(trip.departDate):'—'],['🛬','Returns',trip.returnDate?prettyDate(trip.returnDate):'—']].map((b,i)=>(
+              <div key={i} className={`rounded-2xl p-3 ${dark?'bg-white/5 border border-white/10':'bg-white border border-lavender-200'}`}>
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide font-semibold text-lavender-300/70"><span className="text-sm">{b[0]}</span><span className="truncate">{b[1]}</span></div>
+                <div className="mt-1 font-display text-base sm:text-lg iridescent-text leading-tight break-words">{b[2]}</div>
+              </div>))}
           </div>
         </div>
       </Collapse>
@@ -656,19 +674,16 @@ function PlanView({trip,setTrip,cur,onSave}){
               <div className="space-y-3">{items.map((tr,ix)=>(<div key={tr.id} className={itemBg}>
                 <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-lavender-100">{(TRANSPORT_TYPES[tr.type]||{icon:'🧭'}).icon} {(TRANSPORT_TYPES[tr.type]||{label:'Transport'}).label}<span className="text-[11px] font-normal text-lavender-300/50 ml-auto">#{ix+1}</span></div>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <Field label="Type"><Select value={tr.type} onChange={e=>{const v=e.target.value; const p={type:v}; if(v==='car'||v==='driver'){ if(!tr.startDate)p.startDate=wd.arrive||trip.departDate||''; if(!tr.endDate)p.endDate=wd.depart||trip.returnDate||''; } updTr(tr.id,p);}}>{Object.entries(TRANSPORT_TYPES).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}</Select></Field>
+                  <Field label="Type"><Select value={tr.type} onChange={e=>{const v=e.target.value; const p={type:v}; if(v==='car'){ if(!tr.startDate)p.startDate=wd.arrive||trip.departDate||''; if(!tr.endDate)p.endDate=wd.depart||trip.returnDate||''; } updTr(tr.id,p);}}>{Object.entries(TRANSPORT_TYPES).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}</Select></Field>
                   <Field label="Provider / company"><Input value={tr.provider} placeholder="e.g. Emirates, Hertz" onChange={e=>updTr(tr.id,{provider:e.target.value})}/></Field>
                   <Field label="From"><Input value={tr.from} placeholder="From" onChange={e=>updTr(tr.id,{from:e.target.value})}/></Field>
                   <Field label="To"><Input value={tr.to} placeholder="To" onChange={e=>updTr(tr.id,{to:e.target.value})}/></Field>
-                  {(tr.type==='car'||tr.type==='driver')? <div className="sm:col-span-2 lg:col-span-2"><Field label="Rental period"><RangeField start={tr.startDate} end={tr.endDate} onStart={d=>updTr(tr.id,{startDate:d})} onEnd={d=>updTr(tr.id,{endDate:d})} min={trip.departDate} max={trip.returnDate} labels={['Pick-up','Drop-off']}/></Field></div> : <><Field label="Date"><DateField value={tr.startDate} onChange={d=>updTr(tr.id,{startDate:d})} min={trip.departDate} max={trip.returnDate}/></Field><Field label="End date" hint="opt"><DateField value={tr.endDate} onChange={d=>updTr(tr.id,{endDate:d})} min={tr.startDate||trip.departDate} max={trip.returnDate}/></Field></>}
-                  <Field label="Start time" hint="opt"><Input type="time" value={tr.startTime} onChange={e=>updTr(tr.id,{startTime:e.target.value})}/></Field>
-                  <Field label="End time" hint="opt"><Input type="time" value={tr.endTime} onChange={e=>updTr(tr.id,{endTime:e.target.value})}/></Field>
-                  {(()=>{ const pm=tr.priceMode||((tr.type==='car'||tr.type==='driver')?'perDay':'total'); const ud=usageDays(tr); const autoTot=num(tr.perDay)*ud; return (<>
-                  <Field label="Pricing"><Select value={pm} onChange={e=>updTr(tr.id,{priceMode:e.target.value})}><option value="total">Total price</option><option value="perDay">Per day × days</option></Select></Field>
-                  {pm==='perDay'? <><Field label="Cost / day"><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={tr.perDay} placeholder="0" onChange={e=>updTr(tr.id,{perDay:e.target.value})}/><CurSel value={tr.currency} onChange={v=>updTr(tr.id,{currency:v})}/></div></Field>
-                  <Field label="Total" hint={ud+' day'+(ud>1?'s':'')+(num(tr.perDay)?' · auto '+fmt(autoTot,itemCur(tr,trip)):'')}><Input className="no-spin" type="number" min="0" value={tr.cost} placeholder={autoTot?String(autoTot):'auto'} onChange={e=>updTr(tr.id,{cost:e.target.value})}/></Field></>
-                  : <Field label="Total price"><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={tr.cost} placeholder="0" onChange={e=>updTr(tr.id,{cost:e.target.value})}/><CurSel value={tr.currency} onChange={v=>updTr(tr.id,{currency:v})}/></div></Field>}
-                  </>); })()}
+                  {tr.type==='car'? <div className="sm:col-span-2 lg:col-span-2"><Field label="Rental period"><RangeField start={tr.startDate} end={tr.endDate} onStart={d=>updTr(tr.id,{startDate:d})} onEnd={d=>updTr(tr.id,{endDate:d})} min={trip.departDate} max={trip.returnDate} labels={['Pick-up','Drop-off']}/></Field></div> : <><Field label="Date"><DateField value={tr.startDate} onChange={d=>updTr(tr.id,{startDate:d})} min={trip.departDate} max={trip.returnDate}/></Field><Field label="End date" hint="opt"><DateField value={tr.endDate} onChange={d=>updTr(tr.id,{endDate:d})} min={tr.startDate||trip.departDate} max={trip.returnDate}/></Field></>}
+                  <Field label="Start time" hint="opt"><TimeField value={tr.startTime} onChange={v=>updTr(tr.id,{startTime:v})}/></Field>
+                  <Field label="End time" hint="opt"><TimeField value={tr.endTime} onChange={v=>updTr(tr.id,{endTime:v})}/></Field>
+                  {tr.type==='car'? (()=>{ const ud=usageDays(tr); return (
+                  <div className="sm:col-span-2 lg:col-span-2"><Field label="Cost / day" hint={ud+' day'+(ud>1?'s':'')+' · total '+fmt(num(tr.perDay)*ud,itemCur(tr,trip))}><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={tr.perDay} placeholder="0" onChange={e=>updTr(tr.id,{perDay:e.target.value})}/><CurSel value={tr.currency} onChange={v=>updTr(tr.id,{currency:v})}/></div></Field></div>
+                  ); })() : <div className="sm:col-span-2 lg:col-span-2"><Field label="Cost / person" hint={'× '+pax(tr.persons,trip)+' pax · total '+fmt(num(tr.cost)*pax(tr.persons,trip),itemCur(tr,trip))}><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={tr.cost} placeholder="0" onChange={e=>updTr(tr.id,{cost:e.target.value})}/><CurSel value={tr.currency} onChange={v=>updTr(tr.id,{currency:v})}/></div></Field></div>}
                   <Field label="Passengers"><Input className="no-spin" type="number" min="1" value={tr.persons||''} placeholder={String(trip.persons||1)} onChange={e=>updTr(tr.id,{persons:e.target.value})}/></Field>
                   <Field label="Booking ref" hint="opt"><Input value={tr.ref} placeholder="ABC123" onChange={e=>updTr(tr.id,{ref:e.target.value})}/></Field>
                   <Field label="Notes" hint="opt"><Input value={tr.notes} placeholder="Seat, terminal…" onChange={e=>updTr(tr.id,{notes:e.target.value})}/></Field>
@@ -726,7 +741,7 @@ function PlanView({trip,setTrip,cur,onSave}){
                   <Field label="Name"><Input value={s.name} placeholder="e.g. Burj Khalifa" onChange={e=>updSp(s.id,{name:e.target.value})}/></Field>
                   <Field label="Category" hint="custom ok"><Input list="spend-cats" value={s.category} placeholder="Activity" onChange={e=>updSp(s.id,{category:e.target.value})}/></Field>
                   <Field label="Date"><DateField value={s.date} onChange={d=>updSp(s.id,{date:d})} min={dwin(nd.id).arrive||trip.departDate} max={dwin(nd.id).depart||trip.returnDate}/></Field>
-                  <Field label="Time" hint="opt"><Input type="time" value={s.time} onChange={e=>updSp(s.id,{time:e.target.value})}/></Field>
+                  <Field label="Time" hint="opt"><TimeField value={s.time} onChange={v=>updSp(s.id,{time:v})}/></Field>
                   <Field label="Persons"><Input className="no-spin" type="number" min="1" value={s.persons||''} placeholder={String(trip.persons||1)} onChange={e=>updSp(s.id,{persons:e.target.value})}/></Field>
                   <Field label="Price / person"><div className="flex gap-2"><Input className="no-spin" type="number" min="0" value={s.perPerson} placeholder="0" onChange={e=>updSp(s.id,{perPerson:e.target.value})}/><CurSel value={s.currency} onChange={v=>updSp(s.id,{currency:v})}/></div></Field>
                   <Field label="Location" hint="opt"><Input value={s.location} placeholder="Address / area" onChange={e=>updSp(s.id,{location:e.target.value})}/></Field>
