@@ -497,6 +497,7 @@ function Collapse({title,step,kicker,defaultOpen=true,right,children}){
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 function isoOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function parseISO(s){ if(!s) return null; const d=new Date(s+'T00:00:00'); return isNaN(d)?null:d; }
+function Portal({children}){ return (typeof document!=='undefined'&&ReactDOM&&ReactDOM.createPortal)?ReactDOM.createPortal(children,document.body):children; }
 function Calendar({selected,rangeStart,rangeEnd,onPick,min,max}){
   const {dark}=useContext(Theme);
   const base=parseISO(selected||rangeStart||rangeEnd)||new Date();
@@ -520,7 +521,7 @@ function DateField({value,onChange,min,max,placeholder}){
   useEffect(()=>{ if(!open)return; place(); const raf=requestAnimationFrame(place); const f=()=>place(); window.addEventListener('scroll',f,true); window.addEventListener('resize',f); const h=e=>{ if((btn.current&&btn.current.contains(e.target))||(pop.current&&pop.current.contains(e.target)))return; setOpen(false); }; document.addEventListener('mousedown',h); return ()=>{ window.removeEventListener('scroll',f,true); window.removeEventListener('resize',f); document.removeEventListener('mousedown',h); cancelAnimationFrame(raf); }; },[open]);
   return (<>
     <button ref={btn} type="button" onClick={()=>setOpen(o=>!o)} className={`w-full rounded-xl px-3.5 py-2.5 text-sm text-left flex items-center justify-between gap-2 ${dark?'bg-white/5 border border-white/10 text-lavender-50':'bg-white border border-lavender-200 text-lavender-950'}`}><span className={value?'':'opacity-40'}>{value?prettyDate(value):(placeholder||'Select date')}</span><span className="opacity-50">📅</span></button>
-    {open&&pos&&<div ref={pop} style={{position:'fixed',left:pos.left,top:pos.top,zIndex:80}}><Calendar selected={value} min={min} max={max} onPick={d=>{onChange(d);setOpen(false);}}/>{value&&<div className="text-center mt-1"><button type="button" onClick={()=>{onChange('');setOpen(false);}} className="text-[11px] text-lavender-300/70 hover:text-peach-400 bg-black/30 rounded px-2 py-0.5">Clear date</button></div>}</div>}
+    {open&&pos&&<Portal><div ref={pop} style={{position:'fixed',left:pos.left,top:pos.top,zIndex:80}}><Calendar selected={value} min={min} max={max} onPick={d=>{onChange(d);setOpen(false);}}/>{value&&<div className="text-center mt-1"><button type="button" onClick={()=>{onChange('');setOpen(false);}} className="text-[11px] text-lavender-300/70 hover:text-peach-400 bg-black/30 rounded px-2 py-0.5">Clear date</button></div>}</div></Portal>}
   </>); }
 function RangeField({start,end,onStart,onEnd,min,max,labels}){
   const {dark}=useContext(Theme); const [open,setOpen]=useState(false); const [pick,setPick]=useState('start'); const [pos,setPos]=useState(null); const wrap=useRef(); const pop=useRef();
@@ -532,7 +533,7 @@ function RangeField({start,end,onStart,onEnd,min,max,labels}){
   const cell=(lbl,val,which)=>(<button type="button" onClick={()=>{setPick(which);setOpen(true);}} className={`flex-1 min-w-0 rounded-xl px-3 py-2 text-sm text-left ${dark?'bg-white/5 text-lavender-50':'bg-white text-lavender-950'} border ${open&&pick===which?'border-lavender-400':(dark?'border-white/10':'border-lavender-200')}`}><div className="text-[9px] uppercase tracking-wide text-lavender-300/60">{lbl}</div><div className={`truncate ${val?'':'opacity-40'}`}>{val?prettyDate(val):'—'}</div></button>);
   return (<div ref={wrap}>
     <div className="flex items-center gap-1.5">{cell(L[0],start,'start')}<span className="text-lavender-300/50">→</span>{cell(L[1],end,'end')}{nights>0&&<span className="text-[11px] text-lavender-300/70 whitespace-nowrap pl-1">{nights}n</span>}</div>
-    {open&&pos&&<div ref={pop} style={{position:'fixed',left:pos.left,top:pos.top,zIndex:80}}><Calendar selected={pick==='start'?start:end} rangeStart={start} rangeEnd={end} min={min} max={max} onPick={onPick}/><div className="text-center mt-1"><span className="text-[11px] text-lavender-300/70 bg-black/30 rounded px-2 py-0.5">{pick==='start'?'Pick '+L[0].toLowerCase():'Pick '+L[1].toLowerCase()}</span></div></div>}
+    {open&&pos&&<Portal><div ref={pop} style={{position:'fixed',left:pos.left,top:pos.top,zIndex:80}}><Calendar selected={pick==='start'?start:end} rangeStart={start} rangeEnd={end} min={min} max={max} onPick={onPick}/><div className="text-center mt-1"><span className="text-[11px] text-lavender-300/70 bg-black/30 rounded px-2 py-0.5">{pick==='start'?'Pick '+L[0].toLowerCase():'Pick '+L[1].toLowerCase()}</span></div></div></Portal>}
   </div>); }
 
 /* ============================ TIME FIELD ============================ */
@@ -544,10 +545,10 @@ function TimeField({value,onChange,placeholder}){
   const slots=useMemo(()=>{ const a=[]; for(let h=0;h<24;h++)for(let m=0;m<60;m+=30){ a.push((h<10?'0':'')+h+':'+(m<10?'0':'')+m); } return a; },[]);
   return (<>
     <button ref={btn} type="button" onClick={()=>setOpen(o=>!o)} className={`w-full rounded-xl px-3.5 py-2.5 text-sm text-left flex items-center justify-between gap-2 ${dark?'bg-white/5 border border-white/10 text-lavender-50':'bg-white border border-lavender-200 text-lavender-950'}`}><span className={value?'':'opacity-40'}>{value?fmtTime(value):(placeholder||'Select time')}</span><span className="opacity-50">🕐</span></button>
-    {open&&pos&&<div ref={pop} style={{position:'fixed',left:pos.left,top:pos.top,zIndex:80,width:232}} className={`rounded-2xl p-2 ${dark?'ac-menu-dark':'ac-menu-light'}`}>
+    {open&&pos&&<Portal><div ref={pop} style={{position:'fixed',left:pos.left,top:pos.top,zIndex:80,width:232}} className={`rounded-2xl p-2 ${dark?'ac-menu-dark':'ac-menu-light'}`}>
       <div className="max-h-[256px] overflow-auto hide-scrollbar grid grid-cols-2 gap-1">{slots.map(s=>(<button key={s} type="button" onClick={()=>{onChange(s);setOpen(false);}} className={`rounded-lg px-2 py-1.5 text-sm text-center transition ${value===s?'iridescent text-indigo2-950 font-semibold':(dark?'text-lavender-100 hover:bg-white/10':'text-lavender-900 hover:bg-lavender-100')}`}>{fmtTime(s)}</button>))}</div>
       {value&&<div className="text-center mt-1.5 pt-1.5 border-t border-white/10"><button type="button" onClick={()=>{onChange('');setOpen(false);}} className="text-[11px] text-lavender-300/70 hover:text-peach-400">Clear time</button></div>}
-    </div>}
+    </div></Portal>}
   </>); }
 
 /* ============================ CITY AUTOCOMPLETE ============================ */
