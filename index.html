@@ -33,8 +33,10 @@
   .app-bg-light{background:radial-gradient(1100px 600px at 10% -10%,rgba(138,100,200,.18),transparent 55%),radial-gradient(900px 700px at 112% 4%,rgba(243,185,142,.20),transparent 50%),linear-gradient(180deg,#faf8ff 0%,#f1ebfb 60%,#faf7ff 100%);}
   .iridescent{background:linear-gradient(110deg,#bba4e4 0%,#8a64c8 35%,#b98fd9 55%,#f3b98e 100%);}
   .iridescent-text{background:linear-gradient(110deg,#c6b3ef 0%,#caa7ec 42%,#f3b98e 100%);-webkit-background-clip:text;background-clip:text;color:transparent;}
-  .glass-dark{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(14px);}
-  .glass-light{background:rgba(255,255,255,.74);border:1px solid rgba(138,100,200,.16);backdrop-filter:blur(14px);}
+  .glass-dark{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);}
+  .glass-light{background:rgba(255,255,255,.85);border:1px solid rgba(138,100,200,.16);}
+  .frost{backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+  .cv-card{content-visibility:auto;contain-intrinsic-size:auto 420px}
   .fade-in{animation:fadeIn .5s ease both}.slide-up{animation:slideUp .45s cubic-bezier(.22,1,.36,1) both}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
   @keyframes slideUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
@@ -83,7 +85,7 @@
 <div id="splash"><div id="splash-logo" style="display:flex;flex-direction:column;align-items:center;gap:10px"><img src="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%27352%20148%20248%20248%27%3E%3Crect%20x%3D%27352%27%20y%3D%27148%27%20width%3D%27248%27%20height%3D%27248%27%20rx%3D%2744%27%20fill%3D%27%2315103a%27%2F%3E%3Cpath%20fill%3D%27%23ffffff%27%20d%3D%27m381.6378%20217.79134l10.228363%20-40.913376l171.15747%200l-10.2283325%2040.913376z%27%2F%3E%3Cpath%20fill%3D%27%23ffffff%27%20d%3D%27m381.6378%20322.20865l10.228363%2040.91339l171.15747%200l-10.2283325%20-40.91339z%27%2F%3E%3Cpath%20fill%3D%27%23ffffff%27%20d%3D%27m381.6378%20290.4567l10.228363%20-40.91339l186.49603%200l-10.2283325%2040.91339z%27%2F%3E%3C%2Fsvg%3E" width="112" height="112" alt="Travel Planner" style="display:block"/><div style="font-family:Marcellus,serif;font-size:26px;letter-spacing:1px;background:linear-gradient(110deg,#c6b3ef,#f3b98e);-webkit-background-clip:text;background-clip:text;color:transparent">Travel Planner</div></div><div class="splash-bar"></div></div>
 <div id="scrollbar"></div>
 <div id="root"></div>
-<script>addEventListener("scroll",function(){var h=document.documentElement,sc=h.scrollTop||document.body.scrollTop,mx=(h.scrollHeight-h.clientHeight)||1,el=document.getElementById("scrollbar");if(el)el.style.width=Math.min(100,sc/mx*100)+"%";},{passive:true});</script>
+<script>(function(){var tick=false;function upd(){tick=false;var h=document.documentElement,sc=h.scrollTop||document.body.scrollTop,mx=(h.scrollHeight-h.clientHeight)||1,el=document.getElementById("scrollbar");if(el)el.style.width=Math.min(100,sc/mx*100)+"%";}addEventListener("scroll",function(){if(!tick){tick=true;requestAnimationFrame(upd);}},{passive:true});})();</script>
 <script>
   (function(){ try{ var saved=localStorage.getItem('tp_logo'); if(saved&&/^(data:image|https?:)/.test(saved)){ var el=document.getElementById('splash-logo'); if(el) el.innerHTML='<img src="'+saved+'" style="max-height:100px;max-width:240px" onerror="this.remove()"/>'; var f=document.getElementById('favicon'); if(f) f.href=saved; } else if(saved){ try{localStorage.removeItem('tp_logo');}catch(e){} } }catch(e){} })();
 </script>
@@ -277,7 +279,7 @@ function PreviewModal({att,onClose}){
   const [url,setUrl]=useState(null);
   useEffect(()=>{ let u; IDB.get(att.id).then(r=>{ if(r&&r.blob){ u=fileToBlobURL(r.blob); setUrl(u);} }); return ()=>u&&URL.revokeObjectURL(u); },[att.id]);
   const isImg=att.type&&att.type.startsWith('image');
-  return (
+  return (<Portal>
     <div className="fixed inset-0 z-[60] bg-black/70 modal-bg flex items-center justify-center p-4" onClick={onClose}>
       <div className="max-w-3xl w-full max-h-[88vh] overflow-auto rounded-2xl glass-dark p-4" onClick={e=>e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3"><div className="text-sm font-semibold text-lavender-100 truncate">{att.name}</div><button onClick={onClose} className="text-lavender-300 hover:text-white text-lg px-2">✕</button></div>
@@ -287,7 +289,7 @@ function PreviewModal({att,onClose}){
           <div className="py-12 text-center text-sm"><a href={url} download={att.name} className="iridescent-text font-semibold">Download {att.name}</a></div>}
         {att.note&&<div className="mt-3 text-xs text-lavender-300/80 italic">“{att.note}”</div>}
       </div>
-    </div>); }
+    </div></Portal>); }
 function Thumb({att,onClick}){
   const [url,setUrl]=useState(null);
   useEffect(()=>{ let u; if(att.type&&att.type.startsWith('image')){ IDB.get(att.id).then(r=>{ if(r&&r.blob){u=fileToBlobURL(r.blob);setUrl(u);} }); } return ()=>u&&URL.revokeObjectURL(u); },[att.id]);
@@ -451,11 +453,11 @@ function InteractiveMap({trip,cityInfo,dark,onFocusCity,focusKey,simplified}){
 function LegendItem({dash,label}){ return (<span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/20"><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#f3b98e" strokeWidth="2" strokeDasharray={dash||undefined}/></svg>{label}</span>); }
 
 /* ============================ HOTEL MINI MAP ============================ */
-function HotelMiniMap({link}){ const embed=mapsEmbed(link); const href=mapsHref(link); if(!link) return null;
+const HotelMiniMap=React.memo(function HotelMiniMap({link}){ const embed=mapsEmbed(link); const href=mapsHref(link); if(!link) return null;
   return (<div className="mt-2 rounded-lg overflow-hidden border border-white/10">
     <iframe src={embed} title="map" loading="lazy" className="w-full h-32 bg-white/5" style={{border:0}}></iframe>
     <a href={href} target="_blank" rel="noopener" className="block text-center text-[11px] py-1.5 iridescent-text font-semibold bg-white/5 hover:bg-white/10">📍 Open in Google Maps</a>
-  </div>); }
+  </div>); });
 
 /* ============================ CITY CARD ============================ */
 const CITY_GRAD=['from-lavender-500/40 to-peach-400/30','from-indigo2-900 to-lavender-600/40','from-lavender-700/50 to-teal2-500/25','from-peach-500/30 to-lavender-500/40','from-lavender-600/40 to-indigo2-900'];
@@ -481,7 +483,7 @@ function CityCard({ci,cur,idx,onFocus,mostExp}){ const {dark}=useContext(Theme);
 /* ============================ COLLAPSE ============================ */
 function Collapse({title,step,kicker,defaultOpen=true,right,children}){
   const {dark}=useContext(Theme); const [open,setOpen]=useState(defaultOpen);
-  return (<Card className="overflow-hidden slide-up">
+  return (<Card className="overflow-hidden slide-up cv-card">
     <div className="w-full flex items-center justify-between gap-3 p-5">
       <button type="button" onClick={()=>setOpen(o=>!o)} className="flex items-center gap-3 text-left flex-1 min-w-0">
         {step&&<div className="w-9 h-9 rounded-xl iridescent text-indigo2-950 font-display flex items-center justify-center text-sm shadow-glow shrink-0">{step}</div>}
@@ -766,7 +768,7 @@ function PlanView({trip,setTrip,cur,onSave}){
       </Collapse>
 
       <div className="fixed bottom-0 left-0 right-0 z-30 md:left-auto md:right-6 md:bottom-6 md:max-w-md">
-        <div className={`md:rounded-2xl ${dark?'glass-dark':'glass-light'} border-t md:border px-4 py-3 flex items-center justify-between gap-3`} style={{paddingBottom:'max(0.75rem, env(safe-area-inset-bottom))'}}>
+        <div className={`md:rounded-2xl frost ${dark?'glass-dark':'glass-light'} border-t md:border px-4 py-3 flex items-center justify-between gap-3`} style={{paddingBottom:'max(0.75rem, env(safe-area-inset-bottom))'}}>
           <div><div className="text-[11px] uppercase tracking-wide text-lavender-300/70 font-semibold">Grand total</div><div className="font-display text-xl iridescent-text -mt-0.5">{fmt(c.grand,cur)}</div></div>
           <div className="flex items-center gap-2">
             <Btn variant="ghost" onClick={()=>exportTripPDF(trip,cur)} title="Export PDF">⬇ PDF</Btn>
@@ -1114,7 +1116,7 @@ function App(){
   return (
     <Theme.Provider value={{dark}}>
       <div className={`min-h-screen ${dark?'app-bg-dark text-lavender-50':'app-bg-light text-lavender-950'} font-sans transition-colors`} style={{paddingBottom:showBottomNav?'72px':'0'}}>
-        <header className={`sticky top-0 z-40 ${dark?'glass-dark':'glass-light'} border-b`}>
+        <header className={`sticky top-0 z-40 frost ${dark?'glass-dark':'glass-light'} border-b`}>
           <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
             <button onClick={()=>setView('trips')}><Logo logo={logo}/></button>
             <nav className="hidden md:flex items-center gap-1">{TOPNAV.map(t=><button key={t.id} onClick={()=>setView(t.id)} className={`px-3.5 py-2 rounded-xl text-sm font-semibold transition ${view===t.id?'iridescent text-indigo2-950 shadow-glow':(dark?'text-lavender-200 hover:bg-white/5':'text-lavender-700 hover:bg-lavender-100')}`}>{t.label}</button>)}</nav>
